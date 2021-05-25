@@ -1,24 +1,24 @@
 """Test certbot.reverter."""
 import csv
 import logging
-import os
 import shutil
 import tempfile
 import unittest
 
-import mock
-import six
+try:
+    import mock
+except ImportError: # pragma: no cover
+    from unittest import mock
 
 from certbot import errors
-
+from certbot.compat import os
 from certbot.tests import util as test_util
 
 
 class ReverterCheckpointLocalTest(test_util.ConfigTestCase):
-    # pylint: disable=too-many-instance-attributes, too-many-public-methods
     """Test the Reverter Class."""
     def setUp(self):
-        super(ReverterCheckpointLocalTest, self).setUp()
+        super().setUp()
         from certbot.reverter import Reverter
 
         # Disable spurious errors... we are trying to test for them
@@ -48,7 +48,7 @@ class ReverterCheckpointLocalTest(test_util.ConfigTestCase):
         no_change = os.path.join(self.reverter.config.backup_dir, path, "CHANGES_SINCE")
         with open(no_change, "r") as f:
             x = f.read()
-        self.assertTrue("No changes" in x)
+        self.assertIn("No changes", x)
 
     def test_basic_add_to_temp_checkpoint(self):
         # These shouldn't conflict even though they are both named config.txt
@@ -89,7 +89,7 @@ class ReverterCheckpointLocalTest(test_util.ConfigTestCase):
 
         # Check to make sure new files are also checked...
         self.assertRaises(errors.ReverterError, self.reverter.add_to_checkpoint,
-                          set([config3]), "invalid save")
+                          {config3}, "invalid save")
 
     def test_multiple_saves_and_temp_revert(self):
         self.reverter.add_to_temp_checkpoint(self.sets[0], "save1")
@@ -155,7 +155,7 @@ class ReverterCheckpointLocalTest(test_util.ConfigTestCase):
 
         act_coms = get_undo_commands(self.config.temp_checkpoint_dir)
 
-        for a_com, com in six.moves.zip(act_coms, coms):
+        for a_com, com in zip(act_coms, coms):
             self.assertEqual(a_com, com)
 
     def test_bad_register_undo_command(self):
@@ -278,10 +278,9 @@ class ReverterCheckpointLocalTest(test_util.ConfigTestCase):
 
 
 class TestFullCheckpointsReverter(test_util.ConfigTestCase):
-    # pylint: disable=too-many-instance-attributes
     """Tests functions having to deal with full checkpoints."""
     def setUp(self):
-        super(TestFullCheckpointsReverter, self).setUp()
+        super().setUp()
         from certbot.reverter import Reverter
         # Disable spurious errors...
         logging.disable(logging.CRITICAL)
@@ -329,8 +328,8 @@ class TestFullCheckpointsReverter(test_util.ConfigTestCase):
         # One dir left... check title
         all_dirs = os.listdir(self.config.backup_dir)
         self.assertEqual(len(all_dirs), 1)
-        self.assertTrue(
-            "First Checkpoint" in get_save_notes(
+        self.assertIn(
+            "First Checkpoint", get_save_notes(
                 os.path.join(self.config.backup_dir, all_dirs[0])))
         # Final rollback
         self.reverter.rollback_checkpoints(1)
@@ -348,11 +347,11 @@ class TestFullCheckpointsReverter(test_util.ConfigTestCase):
         self.assertRaises(
             errors.ReverterError, self.reverter.finalize_checkpoint, "Title")
 
-    @mock.patch("certbot.reverter.os.rename")
-    def test_finalize_checkpoint_no_rename_directory(self, mock_rename):
+    @mock.patch("certbot.reverter.filesystem.replace")
+    def test_finalize_checkpoint_no_rename_directory(self, mock_replace):
 
         self.reverter.add_to_checkpoint(self.sets[0], "perm save")
-        mock_rename.side_effect = OSError
+        mock_replace.side_effect = OSError
 
         self.assertRaises(
             errors.ReverterError, self.reverter.finalize_checkpoint, "Title")
@@ -376,39 +375,6 @@ class TestFullCheckpointsReverter(test_util.ConfigTestCase):
         self.assertEqual(read_in(self.config1), "directive-dir1")
         self.assertEqual(read_in(self.config2), "directive-dir2")
         self.assertFalse(os.path.isfile(config3))
-
-    @test_util.patch_get_utility()
-    def test_view_config_changes(self, mock_output):
-        """This is not strict as this is subject to change."""
-        self._setup_three_checkpoints()
-
-        # Make sure it doesn't throw any errors
-        self.reverter.view_config_changes()
-
-        # Make sure notification is output
-        self.assertEqual(mock_output().notification.call_count, 1)
-
-    @mock.patch("certbot.reverter.logger")
-    def test_view_config_changes_no_backups(self, mock_logger):
-        self.reverter.view_config_changes()
-        self.assertTrue(mock_logger.info.call_count > 0)
-
-    def test_view_config_changes_bad_backups_dir(self):
-        # There shouldn't be any "in progress directories when this is called
-        # It must just be clean checkpoints
-        os.makedirs(os.path.join(self.config.backup_dir, "in_progress"))
-
-        self.assertRaises(
-            errors.ReverterError, self.reverter.view_config_changes)
-
-    def test_view_config_changes_for_logging(self):
-        self._setup_three_checkpoints()
-
-        config_changes = self.reverter.view_config_changes(for_logging=True)
-
-        self.assertTrue("First Checkpoint" in config_changes)
-        self.assertTrue("Second Checkpoint" in config_changes)
-        self.assertTrue("Third Checkpoint" in config_changes)
 
     def _setup_three_checkpoints(self):
         """Generate some finalized checkpoints."""
@@ -450,9 +416,9 @@ def setup_test_files():
     with open(config2, "w") as file_fd:
         file_fd.write("directive-dir2")
 
-    sets = [set([config1]),
-            set([config2]),
-            set([config1, config2])]
+    sets = [{config1},
+            {config2},
+            {config1, config2}]
 
     return config1, config2, dir1, dir2, sets
 

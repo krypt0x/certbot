@@ -28,8 +28,8 @@ class NonceError(ClientError):
 
 class BadNonce(NonceError):
     """Bad nonce error."""
-    def __init__(self, nonce, error, *args, **kwargs):
-        super(BadNonce, self).__init__(*args, **kwargs)
+    def __init__(self, nonce, error, *args):
+        super().__init__(*args)
         self.nonce = nonce
         self.error = error
 
@@ -44,11 +44,11 @@ class MissingNonce(NonceError):
     Replay-Nonce header field in each successful response to a POST it
     provides to a client (...)".
 
-    :ivar requests.Response response: HTTP Response
+    :ivar requests.Response ~.response: HTTP Response
 
     """
-    def __init__(self, response, *args, **kwargs):
-        super(MissingNonce, self).__init__(*args, **kwargs)
+    def __init__(self, response, *args):
+        super().__init__(*args)
         self.response = response
 
     def __str__(self):
@@ -72,7 +72,7 @@ class PollError(ClientError):
     def __init__(self, exhausted, updated):
         self.exhausted = exhausted
         self.updated = updated
-        super(PollError, self).__init__()
+        super().__init__()
 
     @property
     def timeout(self):
@@ -83,16 +83,19 @@ class PollError(ClientError):
         return '{0}(exhausted={1!r}, updated={2!r})'.format(
             self.__class__.__name__, self.exhausted, self.updated)
 
+
 class ValidationError(Error):
     """Error for authorization failures. Contains a list of authorization
     resources, each of which is invalid and should have an error field.
     """
     def __init__(self, failed_authzrs):
         self.failed_authzrs = failed_authzrs
-        super(ValidationError, self).__init__()
+        super().__init__()
 
-class TimeoutError(Error):
+
+class TimeoutError(Error):  # pylint: disable=redefined-builtin
     """Error for when polling an authorization or an order times out."""
+
 
 class IssuanceError(Error):
     """Error sent by the server after requesting issuance of a certificate."""
@@ -103,7 +106,8 @@ class IssuanceError(Error):
         :param messages.Error error: The error provided by the server.
         """
         self.error = error
-        super(IssuanceError, self).__init__()
+        super().__init__()
+
 
 class ConflictError(ClientError):
     """Error for when the server returns a 409 (Conflict) HTTP status.
@@ -115,7 +119,7 @@ class ConflictError(ClientError):
     """
     def __init__(self, location):
         self.location = location
-        super(ConflictError, self).__init__()
+        super().__init__()
 
 
 class WildcardUnsupportedError(Error):

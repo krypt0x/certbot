@@ -1,5 +1,6 @@
 """Tests to ensure the lock order is preserved."""
 import atexit
+import datetime
 import functools
 import logging
 import os
@@ -9,11 +10,18 @@ import subprocess
 import sys
 import tempfile
 
-from certbot import lock
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+# TODO: once mypy has cryptography types bundled, type: ignore can be removed.
+# See https://github.com/pyca/cryptography/issues/4275
+from cryptography.hazmat.primitives import hashes  # type: ignore
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
 from certbot import util
-
+from certbot._internal import lock
+from certbot.compat import filesystem
 from certbot.tests import util as test_util
-
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +57,9 @@ def set_up():
     command = set_up_command(config_dir, logs_dir, work_dir, nginx_dir)
 
     dirs = [logs_dir, config_dir, work_dir]
-    # Travis and Circle CI set CI to true so we
-    # will always test Nginx's lock during CI
-    if os.environ.get('CI') == 'true' or util.exe_exists('nginx'):
+    # If Nginx is installed, do the test, otherwise skip it.
+    # Issue https://github.com/certbot/certbot/issues/8121 tracks the work to remove this control.
+    if util.exe_exists('nginx'):
         dirs.append(nginx_dir)
     else:
         logger.warning('Skipping Nginx lock tests')
@@ -82,7 +90,7 @@ def set_up_dirs():
     nginx_dir = os.path.join(temp_dir, 'nginx')
 
     for directory in (config_dir, logs_dir, work_dir, nginx_dir,):
-        os.mkdir(directory)
+        filesystem.mkdir(directory)
 
     test_util.make_lineage(config_dir, 'sample-renewal.conf')
     set_up_nginx_dir(nginx_dir)
@@ -100,12 +108,11 @@ def set_up_nginx_dir(root_path):
     repo_root = check_call('git rev-parse --show-toplevel'.split()).strip()
     conf_script = os.path.join(
         repo_root, 'certbot-nginx', 'tests', 'boulder-integration.conf.sh')
-    # boulder-integration.conf.sh uses the root environment variable as
-    # the Nginx server root when writing paths
-    os.environ['root'] = root_path
+    # Prepare self-signed certificates for Nginx
+    key_path, cert_path = setup_certificate(root_path)
+    # Generate Nginx configuration
     with open(os.path.join(root_path, 'nginx.conf'), 'w') as f:
-        f.write(check_call(['/bin/sh', conf_script]))
-    del os.environ['root']
+        f.write(check_call(['/bin/sh', conf_script, root_path, key_path, cert_path]))
 
 
 def set_up_command(config_dir, logs_dir, work_dir, nginx_dir):
@@ -126,10 +133,55 @@ def set_up_command(config_dir, logs_dir, work_dir, nginx_dir):
     return (
         'certbot --cert-path {0} --key-path {1} --config-dir {2} '
         '--logs-dir {3} --work-dir {4} --nginx-server-root {5} --debug '
-        '--force-renewal --nginx --verbose '.format(
+        '--force-renewal --nginx -vv '.format(
             test_util.vector_path('cert.pem'),
             test_util.vector_path('rsa512_key.pem'),
             config_dir, logs_dir, work_dir, nginx_dir).split())
+
+
+def setup_certificate(workspace):
+    """Generate a self-signed certificate for nginx.
+    :param workspace: path of folder where to put the certificate
+    :return: tuple containing the key path and certificate path
+    :rtype: `tuple`
+    """
+    # Generate key
+    # See comment on cryptography import about type: ignore
+    private_key = rsa.generate_private_key(  # type: ignore
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+    subject = issuer = x509.Name([
+        x509.NameAttribute(x509.NameOID.COMMON_NAME, u'nginx.wtf')
+    ])
+    certificate = x509.CertificateBuilder().subject_name(
+        subject
+    ).issuer_name(
+        issuer
+    ).public_key(
+        private_key.public_key()
+    ).serial_number(
+        1
+    ).not_valid_before(
+        datetime.datetime.utcnow()
+    ).not_valid_after(
+        datetime.datetime.utcnow() + datetime.timedelta(days=1)
+    ).sign(private_key, hashes.SHA256(), default_backend())
+
+    key_path = os.path.join(workspace, 'cert.key')
+    with open(key_path, 'wb') as file_handle:
+        file_handle.write(private_key.private_bytes(  # type: ignore
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        ))
+
+    cert_path = os.path.join(workspace, 'cert.pem')
+    with open(cert_path, 'wb') as file_handle:
+        file_handle.write(certificate.public_bytes(serialization.Encoding.PEM))
+
+    return key_path, cert_path
 
 
 def test_command(command, directories):
@@ -161,7 +213,8 @@ def check_error(command, dir_path):
     if ret == 0:
         report_failure("Certbot didn't exit with a nonzero status!", out, err)
 
-    match = re.search("Please see the logfile '(.*)' for more details", err)
+    # this regex looks weird in order to deal with a text change between HEAD and -oldest
+    match = re.search("ee the logfile '?(.*?)'? ", err)
     if match is not None:
         # Get error output from more verbose logfile
         with open(match.group(1)) as f:
@@ -212,9 +265,9 @@ def subprocess_call(args):
     :rtype: tuple
 
     """
-    process = subprocess.Popen(args, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, universal_newlines=True)
-    out, err = process.communicate()
+    process = subprocess.run(args, stdout=subprocess.PIPE, check=False,
+                             stderr=subprocess.PIPE, universal_newlines=True)
+    out, err = process.stdout, process.stderr
     logger.debug('Return code was %d', process.returncode)
     log_output(logging.DEBUG, out, err)
     return process.returncode, out, err
@@ -235,4 +288,9 @@ def log_output(level, out, err):
 
 
 if __name__ == "__main__":
-    main()
+    if os.name != 'nt':
+        main()
+    else:
+        print(
+            'Warning: lock_test cannot be executed on Windows, '
+            'as it relies on a Nginx distribution for Linux.')

@@ -3,6 +3,10 @@ The `~certbot_dns_ovh.dns_ovh` plugin automates the process of
 completing a ``dns-01`` challenge (`~acme.challenges.DNS01`) by creating, and
 subsequently removing, TXT records using the OVH API.
 
+.. note::
+   The plugin is not installed by default. It can be installed by heading to
+   `certbot.eff.org <https://certbot.eff.org/instructions#wildcard>`_, choosing your system and
+   selecting the Wildcard tab.
 
 Named Arguments
 ---------------
@@ -72,7 +76,7 @@ Examples
 
    certbot certonly \\
      --dns-ovh \\
-     --dns-ovh-credentials ~/.secrets/certbot/ohv.ini \\
+     --dns-ovh-credentials ~/.secrets/certbot/ovh.ini \\
      -d example.com
 
 .. code-block:: bash

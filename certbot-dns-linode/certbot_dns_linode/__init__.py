@@ -3,6 +3,10 @@ The `~certbot_dns_linode.dns_linode` plugin automates the process of
 completing a ``dns-01`` challenge (`~acme.challenges.DNS01`) by creating, and
 subsequently removing, TXT records using the Linode API.
 
+.. note::
+   The plugin is not installed by default. It can be installed by heading to
+   `certbot.eff.org <https://certbot.eff.org/instructions#wildcard>`_, choosing your system and
+   selecting the Wildcard tab.
 
 Named Arguments
 ---------------
@@ -14,7 +18,11 @@ Named Arguments
                                             DNS to propagate before asking the
                                             ACME server to verify the DNS
                                             record.
-                                            (Default: 960)
+                                            (Default: 120 because Linode
+                                            updates its first DNS every 60
+                                            seconds and we allow 60 more seconds
+                                            for the update to reach other 5
+                                            servers)
 ==========================================  ===================================
 
 
@@ -23,7 +31,8 @@ Credentials
 
 Use of this plugin requires a configuration file containing Linode API
 credentials, obtained from your Linode account's `Applications & API
-Tokens page <https://manager.linode.com/profile/api>`_.
+Tokens page (legacy) <https://manager.linode.com/profile/api>`_ or `Applications
+& API Tokens page (new) <https://cloud.linode.com/profile/tokens>`_.
 
 .. code-block:: ini
    :name: credentials.ini
@@ -31,6 +40,7 @@ Tokens page <https://manager.linode.com/profile/api>`_.
 
    # Linode API credentials used by Certbot
    dns_linode_key = 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ64
+   dns_linode_version = [<blank>|3|4]
 
 The path to this file can be provided interactively or using the
 ``--dns-linode-credentials`` command-line argument. Certbot records the path
@@ -74,13 +84,15 @@ Examples
      -d www.example.com
 
 .. code-block:: bash
-   :caption: To acquire a certificate for ``example.com``, waiting 60 seconds
-             for DNS propagation
+   :caption: To acquire a certificate for ``example.com``, waiting 120 seconds
+             for DNS propagation (Linode updates its first DNS every minute
+             and we allow some extra time for the update to reach other 5
+             servers)
 
    certbot certonly \\
      --dns-linode \\
      --dns-linode-credentials ~/.secrets/certbot/linode.ini \\
-     --dns-linode-propagation-seconds 60 \\
+     --dns-linode-propagation-seconds 120 \\
      -d example.com
 
 """

@@ -6,8 +6,12 @@ useful as there are often differences in readlink on different
 platforms.
 
 """
-from __future__ import print_function
 import os
 import sys
 
-print(os.path.realpath(sys.argv[1]))
+
+def main(link):
+    return os.path.realpath(link)
+
+if __name__ == '__main__':
+    print(main(sys.argv[1]))

@@ -1,24 +1,21 @@
-from setuptools import setup
 from setuptools import find_packages
+from setuptools import setup
 
-
-version = '0.28.0.dev0'
+version = '1.16.0.dev0'
 
 # Remember to update local-oldest-requirements.txt when changing the minimum
 # acme/certbot version.
 install_requires = [
-    'acme>=0.25.0',
-    'certbot>=0.26.0',
-    'mock',
+    'acme>=1.8.0',
+    'certbot>=1.10.0',
     'python-augeas',
-    'setuptools',
+    'setuptools>=39.0.1',
     'zope.component',
     'zope.interface',
 ]
 
-docs_extras = [
-    'Sphinx>=1.0',  # autodoc_member_order = 'bysource', autodoc_default_flags
-    'sphinx_rtd_theme',
+dev_extras = [
+    'apacheconfig>=0.3.2',
 ]
 
 setup(
@@ -27,9 +24,9 @@ setup(
     description="Apache plugin for Certbot",
     url='https://github.com/letsencrypt/letsencrypt',
     author="Certbot Project",
-    author_email='client-dev@letsencrypt.org',
+    author_email='certbot-dev@eff.org',
     license='Apache License 2.0',
-    python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*',
+    python_requires='>=3.6',
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'Environment :: Plugins',
@@ -37,13 +34,11 @@ setup(
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: POSIX :: Linux',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
         'Topic :: Internet :: WWW/HTTP',
         'Topic :: Security',
         'Topic :: System :: Installation/Setup',
@@ -56,12 +51,11 @@ setup(
     include_package_data=True,
     install_requires=install_requires,
     extras_require={
-        'docs': docs_extras,
+        'dev': dev_extras,
     },
     entry_points={
         'certbot.plugins': [
-            'apache = certbot_apache.entrypoint:ENTRYPOINT',
+            'apache = certbot_apache._internal.entrypoint:ENTRYPOINT',
         ],
     },
-    test_suite='certbot_apache',
 )

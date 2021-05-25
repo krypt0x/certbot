@@ -2,14 +2,14 @@
 import os
 import shutil
 import subprocess
+from unittest import mock
 
-import mock
 import zope.interface
 
-from certbot import configuration
 from certbot import errors as le_errors
 from certbot import util as certbot_util
-from certbot_apache import entrypoint
+from certbot._internal import configuration
+from certbot_apache._internal import entrypoint
 from certbot_compatibility_test import errors
 from certbot_compatibility_test import interfaces
 from certbot_compatibility_test import util
@@ -18,24 +18,23 @@ from certbot_compatibility_test.configurators import common as configurators_com
 
 @zope.interface.implementer(interfaces.IConfiguratorProxy)
 class Proxy(configurators_common.Proxy):
-    # pylint: disable=too-many-instance-attributes
     """A common base for Apache test configurators"""
 
     def __init__(self, args):
         """Initializes the plugin with the given command line args"""
-        super(Proxy, self).__init__(args)
+        super().__init__(args)
         self.le_config.apache_le_vhost_ext = "-le-ssl.conf"
 
         self.modules = self.server_root = self.test_conf = self.version = None
         patch = mock.patch(
-            "certbot_apache.configurator.display_ops.select_vhost")
+            "certbot_apache._internal.configurator.display_ops.select_vhost")
         mock_display = patch.start()
         mock_display.side_effect = le_errors.PluginError(
             "Unable to determine vhost")
 
     def load_config(self):
         """Loads the next configuration for the plugin to test"""
-        config = super(Proxy, self).load_config()
+        config = super().load_config()
         self._all_names, self._test_names = _get_names(config)
 
         server_root = _get_server_root(config)
@@ -55,9 +54,9 @@ class Proxy(configurators_common.Proxy):
 
     def _prepare_configurator(self):
         """Prepares the Apache plugin for testing"""
-        for k in entrypoint.ENTRYPOINT.OS_DEFAULTS.keys():
+        for k in entrypoint.ENTRYPOINT.OS_DEFAULTS.__dict__.keys():
             setattr(self.le_config, "apache_" + k,
-                    entrypoint.ENTRYPOINT.OS_DEFAULTS[k])
+                    getattr(entrypoint.ENTRYPOINT.OS_DEFAULTS, k))
 
         self._configurator = entrypoint.ENTRYPOINT(
             config=configuration.NamespaceConfig(self.le_config),
@@ -66,7 +65,7 @@ class Proxy(configurators_common.Proxy):
 
     def cleanup_from_tests(self):
         """Performs any necessary cleanup from running plugin tests"""
-        super(Proxy, self).cleanup_from_tests()
+        super().cleanup_from_tests()
         mock.patch.stopall()
 
 

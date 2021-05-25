@@ -14,8 +14,10 @@ class Header(jose.Header):
     kid = jose.Field('kid', omitempty=True)
     url = jose.Field('url', omitempty=True)
 
-    @nonce.decoder
-    def nonce(value):  # pylint: disable=missing-docstring,no-self-argument
+    # Mypy does not understand the josepy magic happening here, and falsely claims
+    # that nonce is redefined. Let's ignore the type check here.
+    @nonce.decoder  # type: ignore
+    def nonce(value):  # pylint: disable=no-self-argument,missing-function-docstring
         try:
             return jose.decode_b64jose(value)
         except jose.DeserializationError as error:
@@ -40,15 +42,15 @@ class Signature(jose.Signature):
 class JWS(jose.JWS):
     """ACME-specific JWS. Includes none, url, and kid in protected header."""
     signature_cls = Signature
-    __slots__ = jose.JWS._orig_slots  # pylint: disable=no-member
+    __slots__ = jose.JWS._orig_slots
 
     @classmethod
-    # pylint: disable=arguments-differ,too-many-arguments
+    # pylint: disable=arguments-differ
     def sign(cls, payload, key, alg, nonce, url=None, kid=None):
         # Per ACME spec, jwk and kid are mutually exclusive, so only include a
         # jwk field if kid is not provided.
         include_jwk = kid is None
-        return super(JWS, cls).sign(payload, key=key, alg=alg,
+        return super().sign(payload, key=key, alg=alg,
                                     protect=frozenset(['nonce', 'url', 'kid', 'jwk', 'alg']),
                                     nonce=nonce, url=url, kid=kid,
                                     include_jwk=include_jwk)

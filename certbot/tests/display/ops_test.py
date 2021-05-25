@@ -1,23 +1,23 @@
 # coding=utf-8
 """Test certbot.display.ops."""
-import os
 import sys
 import unittest
 
 import josepy as jose
-import mock
+try:
+    import mock
+except ImportError: # pragma: no cover
+    from unittest import mock
 import zope.component
 
 from acme import messages
-
-from certbot import account
 from certbot import errors
-
-from certbot.display import util as display_util
+from certbot._internal import account
+from certbot.compat import filesystem
+from certbot.compat import os
 from certbot.display import ops
-
+from certbot.display import util as display_util
 import certbot.tests.util as test_util
-
 
 KEY = jose.JWKRSA.load(test_util.load_vector("rsa512_key.pem"))
 
@@ -43,7 +43,7 @@ class GetEmailTest(unittest.TestCase):
         mock_input.return_value = (display_util.OK, "foo@bar.baz")
         with mock.patch("certbot.display.ops.util.safe_email") as mock_safe_email:
             mock_safe_email.return_value = True
-            self.assertTrue(self._call() is "foo@bar.baz")
+            self.assertEqual(self._call(), "foo@bar.baz")
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_ok_not_safe(self, mock_get_utility):
@@ -51,7 +51,7 @@ class GetEmailTest(unittest.TestCase):
         mock_input.return_value = (display_util.OK, "foo@bar.baz")
         with mock.patch("certbot.display.ops.util.safe_email") as mock_safe_email:
             mock_safe_email.side_effect = [False, True]
-            self.assertTrue(self._call() is "foo@bar.baz")
+            self.assertEqual(self._call(), "foo@bar.baz")
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_invalid_flag(self, mock_get_utility):
@@ -61,9 +61,9 @@ class GetEmailTest(unittest.TestCase):
         with mock.patch("certbot.display.ops.util.safe_email") as mock_safe_email:
             mock_safe_email.return_value = True
             self._call()
-            self.assertTrue(invalid_txt not in mock_input.call_args[0][0])
+            self.assertNotIn(invalid_txt, mock_input.call_args[0][0])
             self._call(invalid=True)
-            self.assertTrue(invalid_txt in mock_input.call_args[0][0])
+            self.assertIn(invalid_txt, mock_input.call_args[0][0])
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_optional_flag(self, mock_get_utility):
@@ -73,8 +73,7 @@ class GetEmailTest(unittest.TestCase):
             mock_safe_email.side_effect = [False, True]
             self._call(optional=False)
             for call in mock_input.call_args_list:
-                self.assertTrue(
-                    "--register-unsafely-without-email" not in call[0][0])
+                self.assertNotIn("--register-unsafely-without-email", call[0][0])
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_optional_invalid_unsafe(self, mock_get_utility):
@@ -84,19 +83,19 @@ class GetEmailTest(unittest.TestCase):
         with mock.patch("certbot.display.ops.util.safe_email") as mock_safe_email:
             mock_safe_email.side_effect = [False, True]
             self._call(invalid=True)
-            self.assertTrue(invalid_txt in mock_input.call_args[0][0])
+            self.assertIn(invalid_txt, mock_input.call_args[0][0])
 
 
 class ChooseAccountTest(test_util.TempDirTestCase):
     """Tests for certbot.display.ops.choose_account."""
     def setUp(self):
-        super(ChooseAccountTest, self).setUp()
+        super().setUp()
 
         zope.component.provideUtility(display_util.FileDisplay(sys.stdout,
                                                                False))
 
         self.account_keys_dir = os.path.join(self.tempdir, "keys")
-        os.makedirs(self.account_keys_dir, 0o700)
+        filesystem.makedirs(self.account_keys_dir, 0o700)
 
         self.config = mock.MagicMock(
             accounts_dir=self.tempdir,
@@ -128,27 +127,7 @@ class ChooseAccountTest(test_util.TempDirTestCase):
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_cancel(self, mock_util):
         mock_util().menu.return_value = (display_util.CANCEL, 1)
-        self.assertTrue(self._call([self.acc1, self.acc2]) is None)
-
-
-class GenSSLLabURLs(unittest.TestCase):
-    """Loose test of _gen_ssl_lab_urls. URL can change easily in the future."""
-    def setUp(self):
-        zope.component.provideUtility(display_util.FileDisplay(sys.stdout,
-                                                               False))
-
-    @classmethod
-    def _call(cls, domains):
-        from certbot.display.ops import _gen_ssl_lab_urls
-        return _gen_ssl_lab_urls(domains)
-
-    def test_zero(self):
-        self.assertEqual(self._call([]), [])
-
-    def test_two(self):
-        urls = self._call(["eff.org", "umich.edu"])
-        self.assertTrue("eff.org" in urls[0])
-        self.assertTrue("umich.edu" in urls[1])
+        self.assertIsNone(self._call([self.acc1, self.acc2]))
 
 
 class GenHttpsNamesTest(unittest.TestCase):
@@ -230,8 +209,7 @@ class ChooseNamesTest(unittest.TestCase):
         actual_doms = self._call(self.mock_install)
         self.assertEqual(mock_util().input.call_count, 1)
         self.assertEqual(actual_doms, [domain])
-        self.assertTrue(
-            "configuration files" in mock_util().input.call_args[0][0])
+        self.assertIn("configuration files", mock_util().input.call_args[0][0])
 
     def test_sort_names_trivial(self):
         from certbot.display.ops import _sort_names
@@ -274,7 +252,7 @@ class ChooseNamesTest(unittest.TestCase):
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_filter_names_valid_return(self, mock_util):
-        self.mock_install.get_all_names.return_value = set(["example.com"])
+        self.mock_install.get_all_names.return_value = {"example.com"}
         mock_util().checklist.return_value = (display_util.OK, ["example.com"])
 
         names = self._call(self.mock_install)
@@ -283,7 +261,7 @@ class ChooseNamesTest(unittest.TestCase):
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_filter_namees_override_question(self, mock_util):
-        self.mock_install.get_all_names.return_value = set(["example.com"])
+        self.mock_install.get_all_names.return_value = {"example.com"}
         mock_util().checklist.return_value = (display_util.OK, ["example.com"])
         names = self._call(self.mock_install, "Custom")
         self.assertEqual(names, ["example.com"])
@@ -292,14 +270,14 @@ class ChooseNamesTest(unittest.TestCase):
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_filter_names_nothing_selected(self, mock_util):
-        self.mock_install.get_all_names.return_value = set(["example.com"])
+        self.mock_install.get_all_names.return_value = {"example.com"}
         mock_util().checklist.return_value = (display_util.OK, [])
 
         self.assertEqual(self._call(self.mock_install), [])
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_filter_names_cancel(self, mock_util):
-        self.mock_install.get_all_names.return_value = set(["example.com"])
+        self.mock_install.get_all_names.return_value = {"example.com"}
         mock_util().checklist.return_value = (
             display_util.CANCEL, ["example.com"])
 
@@ -356,50 +334,45 @@ class ChooseNamesTest(unittest.TestCase):
 
 
 class SuccessInstallationTest(unittest.TestCase):
-    # pylint: disable=too-few-public-methods
     """Test the success installation message."""
     @classmethod
     def _call(cls, names):
         from certbot.display.ops import success_installation
         success_installation(names)
 
+    @test_util.patch_get_utility("certbot.display.util.notify")
     @test_util.patch_get_utility("certbot.display.ops.z_util")
-    def test_success_installation(self, mock_util):
+    def test_success_installation(self, mock_util, mock_notify):
         mock_util().notification.return_value = None
         names = ["example.com", "abc.com"]
 
         self._call(names)
 
-        self.assertEqual(mock_util().notification.call_count, 1)
-        arg = mock_util().notification.call_args_list[0][0][0]
+        self.assertEqual(mock_notify.call_count, 1)
+        arg = mock_notify.call_args_list[0][0][0]
 
         for name in names:
-            self.assertTrue(name in arg)
+            self.assertIn(name, arg)
 
 
 class SuccessRenewalTest(unittest.TestCase):
-    # pylint: disable=too-few-public-methods
     """Test the success renewal message."""
     @classmethod
     def _call(cls, names):
         from certbot.display.ops import success_renewal
         success_renewal(names)
 
+    @test_util.patch_get_utility("certbot.display.util.notify")
     @test_util.patch_get_utility("certbot.display.ops.z_util")
-    def test_success_renewal(self, mock_util):
+    def test_success_renewal(self, mock_util, mock_notify):
         mock_util().notification.return_value = None
         names = ["example.com", "abc.com"]
 
         self._call(names)
 
-        self.assertEqual(mock_util().notification.call_count, 1)
-        arg = mock_util().notification.call_args_list[0][0][0]
-
-        for name in names:
-            self.assertTrue(name in arg)
+        self.assertEqual(mock_notify.call_count, 1)
 
 class SuccessRevocationTest(unittest.TestCase):
-    # pylint: disable=too-few-public-methods
     """Test the success revocation message."""
     @classmethod
     def _call(cls, path):
@@ -407,16 +380,14 @@ class SuccessRevocationTest(unittest.TestCase):
         success_revocation(path)
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
-    def test_success_revocation(self, mock_util):
-        mock_util().notification.return_value = None
+    @mock.patch("certbot.display.util.notify")
+    def test_success_revocation(self, mock_notify, unused_mock_util):
         path = "/path/to/cert.pem"
         self._call(path)
-        mock_util().notification.assert_called_once_with(
+        mock_notify.assert_called_once_with(
             "Congratulations! You have successfully revoked the certificate "
-            "that was located at {0}{1}{1}".format(
-                path,
-                os.linesep), pause=False)
-        self.assertTrue(path in mock_util().notification.call_args[0][0])
+            "that was located at {0}.".format(path)
+        )
 
 
 class ValidatorTests(unittest.TestCase):
@@ -502,9 +473,9 @@ class ChooseValuesTest(unittest.TestCase):
         items = ["first", "second", "third"]
         mock_util().checklist.return_value = (display_util.OK, [items[2]])
         result = self._call(items, None)
-        self.assertEquals(result, [items[2]])
-        self.assertTrue(mock_util().checklist.called)
-        self.assertEquals(mock_util().checklist.call_args[0][0], None)
+        self.assertEqual(result, [items[2]])
+        self.assertIs(mock_util().checklist.called, True)
+        self.assertIsNone(mock_util().checklist.call_args[0][0])
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_choose_names_success_question(self, mock_util):
@@ -512,9 +483,9 @@ class ChooseValuesTest(unittest.TestCase):
         question = "Which one?"
         mock_util().checklist.return_value = (display_util.OK, [items[1]])
         result = self._call(items, question)
-        self.assertEquals(result, [items[1]])
-        self.assertTrue(mock_util().checklist.called)
-        self.assertEquals(mock_util().checklist.call_args[0][0], question)
+        self.assertEqual(result, [items[1]])
+        self.assertIs(mock_util().checklist.called, True)
+        self.assertEqual(mock_util().checklist.call_args[0][0], question)
 
     @test_util.patch_get_utility("certbot.display.ops.z_util")
     def test_choose_names_user_cancel(self, mock_util):
@@ -522,10 +493,34 @@ class ChooseValuesTest(unittest.TestCase):
         question = "Want to cancel?"
         mock_util().checklist.return_value = (display_util.CANCEL, [])
         result = self._call(items, question)
-        self.assertEquals(result, [])
-        self.assertTrue(mock_util().checklist.called)
-        self.assertEquals(mock_util().checklist.call_args[0][0], question)
+        self.assertEqual(result, [])
+        self.assertIs(mock_util().checklist.called, True)
+        self.assertEqual(mock_util().checklist.call_args[0][0], question)
 
+
+@mock.patch('certbot.display.ops.logger')
+@mock.patch('certbot.display.util.notify')
+class ReportExecutedCommand(unittest.TestCase):
+    """Test report_executed_command"""
+    @classmethod
+    def _call(cls, cmd_name: str, rc: int, out: str, err: str):
+        from certbot.display.ops import report_executed_command
+        report_executed_command(cmd_name, rc, out, err)
+
+    def test_mixed_success(self, mock_notify, mock_logger):
+        self._call("some-hook", 0, "Did a thing", "Some warning")
+        self.assertEqual(mock_logger.warning.call_count, 1)
+        self.assertEqual(mock_notify.call_count, 1)
+
+    def test_mixed_error(self, mock_notify, mock_logger):
+        self._call("some-hook", -127, "Did a thing", "Some warning")
+        self.assertEqual(mock_logger.warning.call_count, 2)
+        self.assertEqual(mock_notify.call_count, 1)
+
+    def test_empty_success(self, mock_notify, mock_logger):
+        self._call("some-hook", 0, "\n", " ")
+        self.assertEqual(mock_logger.warning.call_count, 0)
+        self.assertEqual(mock_notify.call_count, 0)
 
 if __name__ == "__main__":
     unittest.main()  # pragma: no cover

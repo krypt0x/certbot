@@ -1,17 +1,33 @@
-from setuptools import setup
-from setuptools import find_packages
+import os
+import sys
 
-version = '0.28.0.dev0'
+from setuptools import find_packages
+from setuptools import setup
+
+version = '1.16.0.dev0'
 
 # Remember to update local-oldest-requirements.txt when changing the minimum
 # acme/certbot version.
 install_requires = [
-    'acme>=0.25.0',
-    'certbot>=0.21.1',
     'boto3',
-    'mock',
-    'setuptools',
+    'setuptools>=39.0.1',
     'zope.interface',
+]
+
+if not os.environ.get('SNAP_BUILD'):
+    install_requires.extend([
+        'acme>=0.29.0',
+        'certbot>=1.1.0',
+    ])
+elif 'bdist_wheel' in sys.argv[1:]:
+    raise RuntimeError('Unset SNAP_BUILD when building wheels '
+                       'to include certbot dependencies.')
+if os.environ.get('SNAP_BUILD'):
+    install_requires.append('packaging')
+
+docs_extras = [
+    'Sphinx>=1.0',  # autodoc_member_order = 'bysource', autodoc_default_flags
+    'sphinx_rtd_theme',
 ]
 
 setup(
@@ -20,23 +36,21 @@ setup(
     description="Route53 DNS Authenticator plugin for Certbot",
     url='https://github.com/certbot/certbot',
     author="Certbot Project",
-    author_email='client-dev@letsencrypt.org',
+    author_email='certbot-dev@eff.org',
     license='Apache License 2.0',
-    python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*',
+    python_requires='>=3.6',
     classifiers=[
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 5 - Production/Stable',
         'Environment :: Plugins',
         'Intended Audience :: System Administrators',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: POSIX :: Linux',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
         'Topic :: Internet :: WWW/HTTP',
         'Topic :: Security',
         'Topic :: System :: Installation/Setup',
@@ -48,11 +62,13 @@ setup(
     include_package_data=True,
     install_requires=install_requires,
     keywords=['certbot', 'route53', 'aws'],
+    extras_require={
+        'docs': docs_extras,
+    },
     entry_points={
         'certbot.plugins': [
-            'dns-route53 = certbot_dns_route53.dns_route53:Authenticator',
+            'dns-route53 = certbot_dns_route53._internal.dns_route53:Authenticator',
             'certbot-route53:auth = certbot_dns_route53.authenticator:Authenticator'
         ],
     },
-    test_suite='certbot_dns_route53',
 )
