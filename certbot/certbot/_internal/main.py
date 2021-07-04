@@ -202,7 +202,7 @@ def _handle_subset_cert_request(config: configuration.NamespaceConfig,
         "--duplicate option.{br}{br}"
         "For example:{br}{br}{1} --duplicate {2}".format(
             existing,
-            sys.argv[0], " ".join(sys.argv[1:]),
+            cli.cli_command, " ".join(sys.argv[1:]),
             br=os.linesep
         ))
     raise errors.Error(USER_CANCELLED)
@@ -469,6 +469,74 @@ def _find_domains_or_certname(config, installer, question=None):
     return domains, certname
 
 
+def _report_next_steps(config: interfaces.IConfig, installer_err: Optional[errors.Error],
+                       lineage: Optional[storage.RenewableCert],
+                       new_or_renewed_cert: bool = True) -> None:
+    """Displays post-run/certonly advice to the user about renewal and installation.
+
+    The output varies by runtime configuration and any errors encountered during installation.
+
+    :param config: Configuration object
+    :type config: interfaces.IConfig
+
+    :param installer_err: The installer/enhancement error encountered, if any.
+    :type error: Optional[errors.Error]
+
+    :param lineage: The resulting certificate lineage from the issuance, if any.
+    :type lineage: Optional[storage.RenewableCert]
+
+    :param bool new_or_renewed_cert: Whether the verb execution resulted in a certificate
+                                     being saved (created or renewed).
+
+    """
+    steps: List[str] = []
+
+    # If the installation or enhancement raised an error, show advice on trying again
+    if installer_err:
+        steps.append(
+            "The certificate was saved, but could not be installed (installer: "
+            f"{config.installer}). After fixing the error shown below, try installing it again "
+            f"by running:\n  {cli.cli_command} install --cert-name "
+            f"{_cert_name_from_config_or_lineage(config, lineage)}"
+        )
+
+    # If a certificate was obtained or renewed, show applicable renewal advice
+    if new_or_renewed_cert:
+        if config.csr:
+            steps.append(
+                "Certificates created using --csr will not be renewed automatically by Certbot. "
+                "You will need to renew the certificate before it expires, by running the same "
+                "Certbot command again.")
+        elif _is_interactive_only_auth(config):
+            steps.append(
+                "This certificate will not be renewed automatically. Autorenewal of "
+                "--manual certificates requires the use of an authentication hook script "
+                "(--manual-auth-hook) but one was not provided. To renew this certificate, repeat "
+                f"this same {cli.cli_command} command before the certificate's expiry date."
+            )
+        elif not config.preconfigured_renewal:
+            steps.append(
+                "The certificate will need to be renewed before it expires. Certbot can "
+                "automatically renew the certificate in the background, but you may need "
+                "to take steps to enable that functionality. "
+                "See https://certbot.org/renewal-setup for instructions.")
+
+    if not steps:
+        return
+
+    # TODO: refactor ANSI escapes during https://github.com/certbot/certbot/issues/8848
+    (bold_on, bold_off) = [c if sys.stdout.isatty() and not config.quiet else '' \
+                           for c in (util.ANSI_SGR_BOLD, util.ANSI_SGR_RESET)]
+
+    print(bold_on, '\n', 'NEXT STEPS:', bold_off, sep='')
+    for step in steps:
+        display_util.notify(f"- {step}")
+
+    # If there was an installer error, segregate the error output with a trailing newline
+    if installer_err:
+        print()
+
+
 def _report_new_cert(config, cert_path, fullchain_path, key_path=None):
     # type: (interfaces.IConfig, Optional[str], Optional[str], Optional[str]) -> None
     """Reports the creation of a new certificate to the user.
@@ -495,24 +563,33 @@ def _report_new_cert(config, cert_path, fullchain_path, key_path=None):
 
     assert cert_path and fullchain_path, "No certificates saved to report."
 
+    renewal_msg = ""
+    if config.preconfigured_renewal and not _is_interactive_only_auth(config):
+        renewal_msg = ("\nCertbot has set up a scheduled task to automatically renew this "
+                       "certificate in the background.")
+
     display_util.notify(
         ("\nSuccessfully received certificate.\n"
         "Certificate is saved at: {cert_path}\n{key_msg}"
         "This certificate expires on {expiry}.\n"
-        "These files will be updated when the certificate renews.\n{renew_msg}{nl}").format(
+        "These files will be updated when the certificate renews.{renewal_msg}{nl}").format(
             cert_path=fullchain_path,
             expiry=crypto_util.notAfter(cert_path).date(),
             key_msg="Key is saved at:         {}\n".format(key_path) if key_path else "",
-            renew_msg="Certbot will automatically renew this certificate in the background."
-                      if config.preconfigured_renewal else
-                      (f'Run "{cli.cli_constants.cli_command} renew" to renew '
-                       "expiring certificates. "
-                       "We recommend setting up a scheduled task for renewal; see "
-                       "https://certbot.eff.org/docs/using.html#automated-renewals "
-                       "for instructions."),
-            nl="\n" if config.verb == "run" else "" # visually split output if also deploying
+            renewal_msg=renewal_msg,
+            nl="\n" if config.verb == "run" else "" # Normalize spacing across verbs
         )
     )
+
+
+def _is_interactive_only_auth(config: interfaces.IConfig) -> bool:
+    """ Whether the current authenticator params only support interactive renewal.
+    """
+    # --manual without --manual-auth-hook can never autorenew
+    if config.authenticator == "manual" and config.manual_auth_hook is None:
+        return True
+
+    return False
 
 
 def _csr_report_new_cert(config: interfaces.IConfig, cert_path: Optional[str],
@@ -813,6 +890,21 @@ def update_account(config, unused_plugins):
     return None
 
 
+def _cert_name_from_config_or_lineage(config: interfaces.IConfig,
+                                      lineage: Optional[storage.RenewableCert]) -> Optional[str]:
+    if lineage:
+        return lineage.lineagename
+    elif config.certname:
+        return config.certname
+    try:
+        cert_name = cert_manager.cert_path_to_lineage(config)
+        return cert_name
+    except errors.Error:
+        pass
+
+    return None
+
+
 def _install_cert(config, le_client, domains, lineage=None):
     """Install a cert
 
@@ -835,20 +927,8 @@ def _install_cert(config, le_client, domains, lineage=None):
     path_provider = lineage if lineage else config
     assert path_provider.cert_path is not None
 
-    cert_name: Optional[str] = None
-    if isinstance(path_provider, storage.RenewableCert):
-        cert_name = path_provider.lineagename
-    elif path_provider.certname:
-        cert_name = path_provider.certname
-    else:
-        # Check if the cert path happens to be part of an existing lineage
-        try:
-            cert_name = cert_manager.cert_path_to_lineage(config)
-        except errors.Error:
-            pass
-
-    le_client.deploy_certificate(cert_name, domains, path_provider.key_path,
-        path_provider.cert_path, path_provider.chain_path, path_provider.fullchain_path)
+    le_client.deploy_certificate(domains, path_provider.key_path, path_provider.cert_path,
+                                 path_provider.chain_path, path_provider.fullchain_path)
     le_client.enhance_config(domains, path_provider.chain_path)
 
 
@@ -993,7 +1073,7 @@ def enhance(config, plugins):
     if not enhancements.are_requested(config) and not oldstyle_enh:
         msg = ("Please specify one or more enhancement types to configure. To list "
                "the available enhancement types, run:\n\n%s --help enhance\n")
-        logger.error(msg, sys.argv[0])
+        logger.error(msg, cli.cli_command)
         raise errors.MisconfigurationError("No enhancements requested, exiting.")
 
     try:
@@ -1216,15 +1296,27 @@ def run(config, plugins):
     if should_get_cert:
         _report_new_cert(config, cert_path, fullchain_path, key_path)
 
-    _install_cert(config, le_client, domains, new_lineage)
+    # The installer error, if any, is being stored as a value here, in order to first print
+    # relevant advice in a nice way, before re-raising the error for normal processing.
+    installer_err: Optional[errors.Error] = None
+    try:
+        _install_cert(config, le_client, domains, new_lineage)
 
-    if enhancements.are_requested(config) and new_lineage:
-        enhancements.enable(new_lineage, domains, installer, config)
+        if enhancements.are_requested(config) and new_lineage:
+            enhancements.enable(new_lineage, domains, installer, config)
 
-    if lineage is None or not should_get_cert:
-        display_ops.success_installation(domains)
-    else:
-        display_ops.success_renewal(domains)
+        if lineage is None or not should_get_cert:
+            display_ops.success_installation(domains)
+        else:
+            display_ops.success_renewal(domains)
+    except errors.Error as e:
+        installer_err = e
+    finally:
+        _report_next_steps(config, installer_err, new_lineage,
+                           new_or_renewed_cert=should_get_cert)
+        # If the installer did fail, re-raise the error to bail out
+        if installer_err:
+            raise installer_err
 
     _suggest_donation_if_appropriate(config)
     eff.handle_subscription(config, le_client.account)
@@ -1327,6 +1419,7 @@ def certonly(config, plugins):
     if config.csr:
         cert_path, chain_path, fullchain_path = _csr_get_and_save_cert(config, le_client)
         _csr_report_new_cert(config, cert_path, chain_path, fullchain_path)
+        _report_next_steps(config, None, None, new_or_renewed_cert=not config.dry_run)
         _suggest_donation_if_appropriate(config)
         eff.handle_subscription(config, le_client.account)
         return
@@ -1345,6 +1438,8 @@ def certonly(config, plugins):
     fullchain_path = lineage.fullchain_path if lineage else None
     key_path = lineage.key_path if lineage else None
     _report_new_cert(config, cert_path, fullchain_path, key_path)
+    _report_next_steps(config, None, lineage,
+                       new_or_renewed_cert=should_get_cert and not config.dry_run)
     _suggest_donation_if_appropriate(config)
     eff.handle_subscription(config, le_client.account)
 
@@ -1445,9 +1540,15 @@ def main(cli_args=None):
     logger.debug("Arguments: %r", cli_args)
     logger.debug("Discovered plugins: %r", plugins)
 
+    # Some releases of Windows require escape sequences to be enable explicitly
+    misc.prepare_virtual_console()
+
     # note: arg parser internally handles --help (and exits afterwards)
     args = cli.prepare_and_parse_args(plugins, cli_args)
     config = configuration.NamespaceConfig(args)
+
+    # This call is done only for retro-compatibility purposes.
+    # TODO: Remove this call once zope dependencies are removed from Certbot.
     zope.component.provideUtility(config)
 
     # On windows, shell without administrative right cannot create symlinks required by certbot.

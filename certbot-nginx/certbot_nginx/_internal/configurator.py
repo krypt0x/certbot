@@ -678,8 +678,9 @@ class NginxConfigurator(common.Installer):
         """Generate invalid certs that let us create ssl directives for Nginx"""
         # TODO: generate only once
         tmp_dir = os.path.join(self.config.work_dir, "snakeoil")
-        le_key = crypto_util.init_save_key(
-            key_size=1024, key_dir=tmp_dir, keyname="key.pem")
+        le_key = crypto_util.generate_key(
+            key_size=1024, key_dir=tmp_dir, keyname="key.pem",
+            strict_permissions=self.config.strict_permissions)
         key = OpenSSL.crypto.load_privatekey(
             OpenSSL.crypto.FILETYPE_PEM, le_key.pem)
         cert = acme_crypto_util.gen_ss_cert(key, domains=[socket.gethostname()])
@@ -768,9 +769,6 @@ class NginxConfigurator(common.Installer):
         except (KeyError, ValueError):
             raise errors.PluginError(
                 "Unsupported enhancement: {0}".format(enhancement))
-        except errors.PluginError:
-            logger.error("Failed %s for %s", enhancement, domain)
-            raise
 
     def _has_certbot_redirect(self, vhost, domain):
         test_redirect_block = _test_block_from_block(_redirect_block_for_domain(domain))
@@ -790,6 +788,10 @@ class NginxConfigurator(common.Installer):
         :raises .errors.PluginError: If no viable HTTPS host can be created or
             set with header header_substring.
         """
+        if not header_substring in constants.HEADER_ARGS:
+            raise errors.NotSupportedError(
+                f"{header_substring} is not supported by the nginx plugin.")
+
         vhosts = self.choose_vhosts(domain)
         if not vhosts:
             raise errors.PluginError(
