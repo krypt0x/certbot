@@ -5,9 +5,8 @@ import unittest
 
 try:
     import mock
-except ImportError: # pragma: no cover
+except ImportError:  # pragma: no cover
     from unittest import mock
-import zope.component
 
 from acme import challenges
 from acme import client as acme_client
@@ -15,8 +14,8 @@ from acme import errors as acme_errors
 from acme import messages
 from certbot import achallenges
 from certbot import errors
-from certbot import interfaces
 from certbot import util
+from certbot._internal.display import obj as display_obj
 from certbot.plugins import common as plugin_common
 from certbot.tests import acme_util
 from certbot.tests import util as test_util
@@ -70,8 +69,8 @@ class HandleAuthorizationsTest(unittest.TestCase):
 
         self.mock_display = mock.Mock()
         self.mock_config = mock.Mock(debug_challenges=False)
-        zope.component.provideUtility(
-            self.mock_display, interfaces.IDisplay)
+        with mock.patch("zope.component.provideUtility"):
+            display_obj.set_display(self.mock_display)
 
         self.mock_auth = mock.MagicMock(name="ApacheConfigurator")
 
@@ -80,9 +79,9 @@ class HandleAuthorizationsTest(unittest.TestCase):
         self.mock_auth.perform.side_effect = gen_auth_resp
 
         self.mock_account = mock.Mock(key=util.Key("file_path", "PEM"))
-        self.mock_net = mock.MagicMock(spec=acme_client.Client)
+        self.mock_net = mock.MagicMock(spec=acme_client.ClientV2)
         self.mock_net.acme_version = 1
-        self.mock_net.retry_after.side_effect = acme_client.Client.retry_after
+        self.mock_net.retry_after.side_effect = acme_client.ClientV2.retry_after
 
         self.handler = AuthHandler(
             self.mock_auth, self.mock_net, self.mock_account, [])
@@ -166,9 +165,6 @@ class HandleAuthorizationsTest(unittest.TestCase):
         self.assertEqual(len(authzr), 1)
 
     def _test_name3_http_01_3_common(self, combos):
-        self.mock_net.request_domain_challenges.side_effect = functools.partial(
-            gen_dom_authzr, challs=acme_util.CHALLENGES, combos=combos)
-
         authzrs = [gen_dom_authzr(domain="0", challs=acme_util.CHALLENGES),
                    gen_dom_authzr(domain="1", challs=acme_util.CHALLENGES),
                    gen_dom_authzr(domain="2", challs=acme_util.CHALLENGES)]
@@ -307,7 +303,7 @@ class HandleAuthorizationsTest(unittest.TestCase):
         mock_order = mock.MagicMock(authorizations=authzrs)
         self.mock_net.poll.side_effect = _gen_mock_on_poll(status=messages.STATUS_INVALID)
 
-        with test_util.patch_get_utility():
+        with test_util.patch_display_util():
             with self.assertRaises(errors.AuthorizationError) as error:
                 self.handler.handle_authorizations(mock_order, self.mock_config, False)
         self.assertIn('Some challenges have failed.', str(error.exception))
@@ -342,7 +338,7 @@ class HandleAuthorizationsTest(unittest.TestCase):
 
         self.mock_net.poll.side_effect = _gen_mock_on_poll(status=messages.STATUS_INVALID)
 
-        with test_util.patch_get_utility():
+        with test_util.patch_display_util():
             with self.assertRaises(errors.AuthorizationError) as error:
                 self.handler.handle_authorizations(mock_order, self.mock_config, True)
 
