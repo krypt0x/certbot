@@ -4,10 +4,10 @@ import sys
 from setuptools import find_packages
 from setuptools import setup
 
-version = '1.20.0.dev0'
+version = '1.22.0.dev0'
 
 install_requires = [
-    'dnspython',
+    'dnspython>=1.15.0',
     'setuptools>=39.0.1',
 ]
 
@@ -51,6 +51,7 @@ setup(
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
         'Topic :: Internet :: WWW/HTTP',
         'Topic :: Security',
         'Topic :: System :: Installation/Setup',

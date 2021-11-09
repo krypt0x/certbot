@@ -2,7 +2,51 @@
 
 Certbot adheres to [Semantic Versioning](https://semver.org/).
 
-## 1.20.0 - master
+## 1.22.0 - master
+
+### Added
+
+* Support for Python 3.10 was added to Certbot and all of its components.
+* The function certbot.util.parse_loose_version was added to parse version
+  strings in the same way as the now deprecated distutils.version.LooseVersion
+  class from the Python standard library.
+
+### Changed
+
+* The function certbot.util.get_strict_version was deprecated and will be
+  removed in a future release.
+
+### Fixed
+
+*
+
+More details about these changes can be found on our GitHub repo.
+
+## 1.21.0 - 2021-11-02
+
+### Added
+
+* Certbot will generate a `web.config` file on Windows in the challenge path
+  when the `webroot` plugin is used, if one does not exist. This `web.config` file
+  lets IIS serve challenge files while they do not have an extension.
+
+### Changed
+
+* We changed the PGP key used to sign the packages we upload to PyPI. Going
+  forward, releases will be signed with one of three different keys. All of
+  these keys are available on major key servers and signed by our previous PGP
+  key. The fingerprints of these new keys are:
+    * BF6BCFC89E90747B9A680FD7B6029E8500F7DB16
+    * 86379B4F0AF371B50CD9E5FF3402831161D1D280
+    * 20F201346BF8F3F455A73F9A780CC99432A28621
+
+### Fixed
+
+*
+
+More details about these changes can be found on our GitHub repo.
+
+## 1.20.0 - 2021-10-05
 
 ### Added
 
@@ -15,7 +59,8 @@ Certbot adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-*
+* The certbot-dns-rfc2136 plugin in Certbot 1.19.0 inadvertently had an implicit
+  dependency on `dnspython>=2.0`. This has been relaxed to `dnspython>=1.15.0`.
 
 More details about these changes can be found on our GitHub repo.
 
