@@ -10,13 +10,16 @@ from typing import IO
 from typing import List
 from typing import Optional
 from typing import Tuple
-from typing import Union
 import warnings
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
 import josepy as jose
 import OpenSSL
+from josepy import ES256
+from josepy import ES384
+from josepy import ES512
+from josepy import RS256
 
 from acme import client as acme_client
 from acme import crypto_util as acme_crypto_util
@@ -49,8 +52,22 @@ def acme_from_config_key(config: configuration.NamespaceConfig, key: jose.JWK,
                          regr: Optional[messages.RegistrationResource] = None
                          ) -> acme_client.ClientV2:
     """Wrangle ACME client construction"""
-    # TODO: Allow for other alg types besides RS256
-    net = acme_client.ClientNetwork(key, account=regr, verify_ssl=(not config.no_verify_ssl),
+    if key.typ == 'EC':
+        public_key = key.key
+        if public_key.key_size == 256:
+            alg = ES256
+        elif public_key.key_size == 384:
+            alg = ES384
+        elif public_key.key_size == 521:
+            alg = ES512
+        else:
+            raise errors.NotSupportedError(
+                "No matching signing algorithm can be found for the key"
+            )
+    else:
+        alg = RS256
+    net = acme_client.ClientNetwork(key, alg=alg, account=regr,
+                                    verify_ssl=(not config.no_verify_ssl),
                                     user_agent=determine_user_agent(config))
 
     with warnings.catch_warnings():
@@ -252,7 +269,7 @@ def perform_registration(acme: acme_client.ClientV2, config: configuration.Names
             raise errors.Error("The ACME client must be an instance of "
                                "acme.client.BackwardsCompatibleClientV2")
     except messages.Error as e:
-        if e.code in ('invalidEmail', 'invalidContact'):
+        if e.code in ("invalidEmail", "invalidContact"):
             if config.noninteractive_mode:
                 msg = ("The ACME server believes %s is an invalid email address. "
                        "Please ensure it is a valid email and attempt "
@@ -573,6 +590,7 @@ class Client:
         :param list domains: list of domains to install the certificate
         :param str privkey_path: path to certificate private key
         :param str cert_path: certificate file path (optional)
+        :param str fullchain_path: path to the full chain of the certificate
         :param str chain_path: chain file path
 
         """
@@ -643,13 +661,13 @@ class Client:
                     "Option %s is not supported by the selected installer. "
                     "Skipping enhancement.", config_name)
 
-        msg = ("We were unable to restart web server")
+        msg = "We were unable to restart web server"
         if enhanced:
             with error_handler.ErrorHandler(self._rollback_and_restart, msg):
                 self.installer.restart()
 
     def apply_enhancement(self, domains: List[str], enhancement: str,
-                          options: Optional[Union[List[str], str]] = None) -> None:
+                          options: Optional[str] = None) -> None:
         """Applies an enhancement on all domains.
 
         :param list domains: list of ssl_vhosts (as strings)

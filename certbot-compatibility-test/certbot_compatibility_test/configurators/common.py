@@ -8,11 +8,11 @@ import tempfile
 from typing import Iterable
 from typing import List
 from typing import Optional
+from typing import Union
 from typing import overload
 from typing import Set
 from typing import Tuple
 from typing import Type
-from typing import Union
 
 from certbot_compatibility_test import errors
 from certbot_compatibility_test import interfaces
@@ -21,6 +21,7 @@ from certbot_compatibility_test import util
 from acme import challenges
 from acme.challenges import Challenge
 from certbot._internal import constants
+from certbot.plugins import common
 from certbot.achallenges import AnnotatedChallenge
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ class Proxy(interfaces.ConfiguratorProxy):
         self.args = args
         self.http_port = 80
         self.https_port = 443
-        self._configurator: interfaces.Configurator
+        self._configurator: common.Configurator
         self._all_names: Optional[Set[str]] = None
         self._test_names: Optional[Set[str]] = None
 

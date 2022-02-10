@@ -9,12 +9,12 @@ import sys
 import tempfile
 from typing import Any
 from typing import Callable
+from typing import Union
 from typing import cast
 from typing import IO
 from typing import Iterable
 from typing import List
 from typing import Optional
-from typing import Union
 import unittest
 import warnings
 
@@ -410,10 +410,11 @@ def _create_display_util_mock_with_stdout(stdout: IO) -> FreezableMock:
 def _assert_valid_call(*args: Any, **kwargs: Any) -> None:
     assert_args = [args[0] if args else kwargs['message']]
 
-    assert_kwargs = {}
-    assert_kwargs['default'] = kwargs.get('default', None)
-    assert_kwargs['cli_flag'] = kwargs.get('cli_flag', None)
-    assert_kwargs['force_interactive'] = kwargs.get('force_interactive', False)
+    assert_kwargs = {
+        'default': kwargs.get('default', None),
+        'cli_flag': kwargs.get('cli_flag', None),
+        'force_interactive': kwargs.get('force_interactive', False),
+    }
 
     display_util.assert_valid_call(*assert_args, **assert_kwargs)
 
