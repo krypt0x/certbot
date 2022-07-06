@@ -75,7 +75,7 @@ latter by running:
 
    source venv/bin/activate
 
-After running this command, ``certbot`` and development tools like ``ipdb``,
+After running this command, ``certbot`` and development tools like ``ipdb3``,
 ``ipython``, ``pytest``, and ``tox`` are available in the shell where you ran
 the command. These tools are installed in the virtual environment and are kept
 separate from your global Python installation. This works by setting
@@ -313,7 +313,7 @@ configuration checkpoints and rollback.
 Writing your own plugin
 -----------------------
 
-.. note:: The Certbot team is not currently accepting any new DNS plugins
+.. note:: The Certbot team is not currently accepting any new plugins
     because we want to rethink our approach to the challenge and resolve some
     issues like `#6464 <https://github.com/certbot/certbot/issues/6464>`_,
     `#6503 <https://github.com/certbot/certbot/issues/6503>`_, and `#6504

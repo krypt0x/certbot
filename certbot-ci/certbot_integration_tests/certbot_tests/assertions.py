@@ -1,6 +1,7 @@
 """This module contains advanced assertions for the certbot integration tests."""
 import io
 import os
+from typing import Optional
 from typing import Type
 
 from cryptography.hazmat.backends import default_backend
@@ -36,16 +37,19 @@ def assert_elliptic_key(key: str, curve: Type[EllipticCurve]) -> None:
     assert isinstance(key.curve, curve)
 
 
-def assert_rsa_key(key: str) -> None:
+def assert_rsa_key(key: str, key_size: Optional[int] = None) -> None:
     """
     Asserts that the key at the given path is an RSA key.
     :param str key: path to key
+    :param int key_size: if provided, assert that the RSA key is of this size
     """
     with open(key, 'rb') as file:
         privkey1 = file.read()
 
     key = load_pem_private_key(data=privkey1, password=None, backend=default_backend())
     assert isinstance(key, RSAPrivateKey)
+    if key_size:
+        assert key_size == key.key_size
 
 
 def assert_hook_execution(probe_path: str, probe_content: str) -> None:
@@ -62,14 +66,26 @@ def assert_hook_execution(probe_path: str, probe_content: str) -> None:
     assert probe_content in lines
 
 
+def assert_saved_lineage_option(config_dir: str, lineage: str,
+                                option: str, value: Optional[str] = None) -> None:
+    """
+    Assert that the option of a lineage has been saved.
+    :param str config_dir: location of the certbot configuration
+    :param str lineage: lineage domain name
+    :param str option: the option key
+    :param value: if desired, the expected option value
+    """
+    with open(os.path.join(config_dir, 'renewal', '{0}.conf'.format(lineage))) as file_h:
+        assert f"{option} = {value if value else ''}" in file_h.read()
+
+
 def assert_saved_renew_hook(config_dir: str, lineage: str) -> None:
     """
     Assert that the renew hook configuration of a lineage has been saved.
     :param str config_dir: location of the certbot configuration
     :param str lineage: lineage domain name
     """
-    with open(os.path.join(config_dir, 'renewal', '{0}.conf'.format(lineage))) as file_h:
-        assert 'renew_hook' in file_h.read()
+    assert_saved_lineage_option(config_dir, lineage, 'renew_hook')
 
 
 def assert_cert_count_for_lineage(config_dir: str, lineage: str, count: int) -> None:

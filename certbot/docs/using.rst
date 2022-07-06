@@ -14,7 +14,7 @@ obtaining, renewing, or revoking certificates. The most important
 and commonly-used commands will be discussed throughout this
 document; an exhaustive list also appears near the end of the document.
 
-The ``certbot`` script on your web server might be named ``letsencrypt`` if your system uses an older package, or ``certbot-auto`` if you used a now-deprecated installation method. Throughout the docs, whenever you see ``certbot``, swap in the correct name as needed.
+The ``certbot`` script on your web server might be named ``letsencrypt`` if your system uses an older package. Throughout the docs, whenever you see ``certbot``, swap in the correct name as needed.
 
 .. _plugins:
 
@@ -91,9 +91,9 @@ with ``--preferred-challenges``.
 There are also many third-party-plugins_ available. Below we describe in more detail
 the circumstances in which each plugin can be used, and how to use it.
 
-.. _challenges: https://tools.ietf.org/html/draft-ietf-acme-acme-03#section-7
-.. _http-01: https://tools.ietf.org/html/draft-ietf-acme-acme-03#section-7.2
-.. _dns-01: https://tools.ietf.org/html/draft-ietf-acme-acme-03#section-7.4
+.. _challenges: https://datatracker.ietf.org/doc/html/rfc8555#section-8
+.. _http-01: https://datatracker.ietf.org/doc/html/rfc8555#section-8.3
+.. _dns-01: https://datatracker.ietf.org/doc/html/rfc8555#section-8.4
 
 Apache
 ------

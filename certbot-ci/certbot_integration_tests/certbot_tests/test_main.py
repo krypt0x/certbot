@@ -8,6 +8,7 @@ import subprocess
 import time
 from typing import Iterable
 from typing import Generator
+from typing import Tuple
 from typing import Type
 
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurve
@@ -25,6 +26,7 @@ from certbot_integration_tests.certbot_tests.assertions import assert_equals_gro
 from certbot_integration_tests.certbot_tests.assertions import assert_equals_world_read_permissions
 from certbot_integration_tests.certbot_tests.assertions import assert_hook_execution
 from certbot_integration_tests.certbot_tests.assertions import assert_rsa_key
+from certbot_integration_tests.certbot_tests.assertions import assert_saved_lineage_option
 from certbot_integration_tests.certbot_tests.assertions import assert_saved_renew_hook
 from certbot_integration_tests.certbot_tests.assertions import assert_world_no_permissions
 from certbot_integration_tests.certbot_tests.assertions import assert_world_read_permissions
@@ -76,7 +78,15 @@ def test_registration_override(context: IntegrationTestsContext) -> None:
     context.certbot(['register', '--email', 'ex1@domain.org,ex2@domain.org'])
 
     context.certbot(['update_account', '--email', 'example@domain.org'])
+    stdout1, _ = context.certbot(['show_account'])
     context.certbot(['update_account', '--email', 'ex1@domain.org,ex2@domain.org'])
+    stdout2, _ = context.certbot(['show_account'])
+
+    # https://github.com/letsencrypt/boulder/issues/6144
+    if context.acme_server != 'boulder-v2':
+        assert 'example@domain.org' in stdout1, "New email should be present"
+        assert 'example@domain.org' not in stdout2, "Old email should not be present"
+        assert 'ex1@domain.org, ex2@domain.org' in stdout2, "New emails should be present"
 
 
 def test_prepare_plugins(context: IntegrationTestsContext) -> None:
@@ -102,6 +112,7 @@ def test_http_01(context: IntegrationTestsContext) -> None:
 
     assert_hook_execution(context.hook_probe, 'deploy')
     assert_saved_renew_hook(context.config_dir, certname)
+    assert_saved_lineage_option(context.config_dir, certname, 'key_type', 'rsa')
 
 
 def test_manual_http_auth(context: IntegrationTestsContext) -> None:
@@ -461,6 +472,42 @@ def test_reuse_key(context: IntegrationTestsContext) -> None:
     assert len({cert1, cert2, cert3}) == 3
 
 
+def test_new_key(context: IntegrationTestsContext) -> None:
+    """Tests --new-key and its interactions with --reuse-key"""
+    def private_key(generation: int) -> Tuple[str, str]:
+        pk_path = join(context.config_dir, f'archive/{certname}/privkey{generation}.pem')
+        with open(pk_path, 'r') as file:
+            return file.read(), pk_path
+
+    certname = context.get_domain('newkey')
+
+    context.certbot(['--domains', certname, '--reuse-key',
+                     '--key-type', 'rsa', '--rsa-key-size', '4096'])
+    privkey1, _ = private_key(1)
+
+    # renew: --new-key should replace the key, but keep reuse_key and the key type + params
+    context.certbot(['renew', '--cert-name', certname, '--new-key'])
+    privkey2, privkey2_path = private_key(2)
+    assert privkey1 != privkey2
+    assert_saved_lineage_option(context.config_dir, certname, 'reuse_key', 'True')
+    assert_rsa_key(privkey2_path, 4096)
+
+    # certonly: it should replace the key but the key size will change
+    context.certbot(['certonly', '-d', certname, '--reuse-key', '--new-key'])
+    privkey3, privkey3_path = private_key(3)
+    assert privkey2 != privkey3
+    assert_saved_lineage_option(context.config_dir, certname, 'reuse_key', 'True')
+    assert_rsa_key(privkey3_path, 2048)
+
+    # certonly: it should be possible to change the key type and keep reuse_key
+    context.certbot(['certonly', '-d', certname, '--reuse-key', '--new-key', '--key-type', 'ecdsa',
+                     '--cert-name', certname])
+    privkey4, privkey4_path = private_key(4)
+    assert privkey3 != privkey4
+    assert_saved_lineage_option(context.config_dir, certname, 'reuse_key', 'True')
+    assert_elliptic_key(privkey4_path, SECP256R1)
+
+
 def test_incorrect_key_type(context: IntegrationTestsContext) -> None:
     with pytest.raises(subprocess.CalledProcessError):
         context.certbot(['--key-type="failwhale"'])
@@ -540,35 +587,47 @@ def test_renew_with_ec_keys(context: IntegrationTestsContext) -> None:
         '--key-type', 'ecdsa', '--elliptic-curve', 'secp256r1',
         '--force-renewal', '-d', certname,
     ])
-
     key1 = join(context.config_dir, "archive", certname, 'privkey1.pem')
     assert 200 < os.stat(key1).st_size < 250  # ec keys of 256 bits are ~225 bytes
     assert_elliptic_key(key1, SECP256R1)
     assert_cert_count_for_lineage(context.config_dir, certname, 1)
+    assert_saved_lineage_option(context.config_dir, certname, 'key_type', 'ecdsa')
 
     context.certbot(['renew', '--elliptic-curve', 'secp384r1'])
-
     assert_cert_count_for_lineage(context.config_dir, certname, 2)
     key2 = join(context.config_dir, 'archive', certname, 'privkey2.pem')
-    assert_elliptic_key(key2, SECP384R1)
     assert 280 < os.stat(key2).st_size < 320  # ec keys of 384 bits are ~310 bytes
+    assert_elliptic_key(key2, SECP384R1)
 
-    # We expect here that the command will fail because without --key-type specified,
-    # Certbot must error out to prevent changing an existing certificate key type,
-    # without explicit user consent (by specifying both --cert-name and --key-type).
-    with pytest.raises(subprocess.CalledProcessError):
-        context.certbot([
-            'certonly',
-            '--force-renewal',
-            '-d', certname
-        ])
+    # When running non-interactively, if --key-type is unspecified but the default value differs
+    # to the lineage key type, Certbot should keep the lineage key type. The curve will still
+    # change to the default value, in order to stay consistent with the behavior of certonly.
+    context.certbot(['certonly', '--force-renewal', '-d', certname])
+    assert_cert_count_for_lineage(context.config_dir, certname, 3)
+    key3 = join(context.config_dir, 'archive', certname, 'privkey3.pem')
+    assert 200 < os.stat(key3).st_size < 250  # ec keys of 256 bits are ~225 bytes
+    assert_elliptic_key(key3, SECP256R1)
+
+    # When running non-interactively, specifying a different --key-type requires user confirmation
+    # with both --key-type and --cert-name.
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        context.certbot(['certonly', '--force-renewal', '-d', certname,
+                         '--key-type', 'rsa'])
+    assert 'Please provide both --cert-name and --key-type' in error.value.stderr
+
+    context.certbot(['certonly', '--force-renewal', '-d', certname,
+                     '--key-type', 'rsa', '--cert-name', certname])
+    assert_cert_count_for_lineage(context.config_dir, certname, 4)
+    key4 = join(context.config_dir, 'archive', certname, 'privkey4.pem')
+    assert_rsa_key(key4)
 
     # We expect that the previous behavior of requiring both --cert-name and
     # --key-type to be set to not apply to the renew subcommand.
-    context.certbot(['renew', '--force-renewal', '--key-type', 'rsa'])
-    assert_cert_count_for_lineage(context.config_dir, certname, 3)
-    key3 = join(context.config_dir, 'archive', certname, 'privkey3.pem')
-    assert_rsa_key(key3)
+    context.certbot(['renew', '--force-renewal', '--key-type', 'ecdsa'])
+    assert_cert_count_for_lineage(context.config_dir, certname, 5)
+    key5 = join(context.config_dir, 'archive', certname, 'privkey5.pem')
+    assert 200 < os.stat(key5).st_size < 250  # ec keys of 256 bits are ~225 bytes
+    assert_elliptic_key(key5, SECP256R1)
 
 
 def test_ocsp_must_staple(context: IntegrationTestsContext) -> None:

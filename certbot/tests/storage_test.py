@@ -39,7 +39,7 @@ class RelevantValuesTest(unittest.TestCase):
     """Tests for certbot._internal.storage.relevant_values."""
 
     def setUp(self):
-        self.values = {"server": "example.org"}
+        self.values = {"server": "example.org", "key_type": "rsa"}
 
     def _call(self, *args, **kwargs):
         from certbot._internal.storage import relevant_values
@@ -461,7 +461,6 @@ class RenewableCertTests(BaseRenewableCertTest):
         ]:
             sometime = datetime.datetime.utcfromtimestamp(current_time)
             mock_datetime.datetime.utcnow.return_value = sometime
-            self.test_rc.configuration["deploy_before_expiry"] = interval
             self.test_rc.configuration["renew_before_expiry"] = interval
             self.assertEqual(self.test_rc.should_autorenew(), result)
 

@@ -646,12 +646,8 @@ class ClientV2(ClientBase):
             Resource.
 
         """
-        self.net.account = regr  # See certbot/certbot#6258
-        # ACME v2 requires to use a POST-as-GET request (POST an empty JWS) here.
-        # This is done by passing None instead of an empty UpdateRegistration to _post().
-        response = self._post(regr.uri, None)
-        self.net.account = self._regr_from_response(response, uri=regr.uri,
-                                                    terms_of_service=regr.terms_of_service)
+        self.net.account = self._get_v2_account(regr, True)
+
         return self.net.account
 
     def update_registration(self, regr: messages.RegistrationResource,
@@ -671,12 +667,15 @@ class ClientV2(ClientBase):
         new_regr = self._get_v2_account(regr)
         return super().update_registration(new_regr, update)
 
-    def _get_v2_account(self, regr: messages.RegistrationResource) -> messages.RegistrationResource:
+    def _get_v2_account(self, regr: messages.RegistrationResource, update_body: bool = False
+                       ) -> messages.RegistrationResource:
         self.net.account = None
         only_existing_reg = regr.body.update(only_return_existing=True)
         response = self._post(self.directory['newAccount'], only_existing_reg)
         updated_uri = response.headers['Location']
-        new_regr = regr.update(uri=updated_uri)
+        new_regr = regr.update(body=messages.Registration.from_json(response.json())
+                               if update_body else regr.body,
+                               uri=updated_uri)
         self.net.account = new_regr
         return new_regr
 
@@ -797,9 +796,13 @@ class ClientV2(ClientBase):
             time.sleep(1)
             response = self._post_as_get(orderr.uri)
             body = messages.Order.from_json(response.json())
-            if body.error is not None:
-                raise errors.IssuanceError(body.error)
-            if body.certificate is not None:
+            if body.status == messages.STATUS_INVALID:
+                if body.error is not None:
+                    raise errors.IssuanceError(body.error)
+                raise errors.Error(
+                    "The certificate order failed. No further information was provided "
+                    "by the server.")
+            elif body.status == messages.STATUS_VALID and body.certificate is not None:
                 certificate_response = self._post_as_get(body.certificate)
                 orderr = orderr.update(body=body, fullchain_pem=certificate_response.text)
                 if fetch_alternative_chains:
@@ -906,7 +909,8 @@ class BackwardsCompatibleClientV2:
             return regr_res
         else:
             client_v2 = cast(ClientV2, self.client)
-            if "terms_of_service" in client_v2.directory.meta:
+            if ("terms_of_service" in client_v2.directory.meta and
+                client_v2.directory.meta.terms_of_service is not None):
                 _assess_tos(client_v2.directory.meta.terms_of_service)
                 regr = regr.update(terms_of_service_agreed=True)
             return client_v2.new_account(regr)
@@ -1103,7 +1107,7 @@ class ClientNetwork:
             is ignored, but logged.
 
         :raises .messages.Error: If server response body
-            carries HTTP Problem (draft-ietf-appsawg-http-problem-00).
+            carries HTTP Problem (https://datatracker.ietf.org/doc/html/rfc7807).
         :raises .ClientError: In case of other networking errors.
 
         """
@@ -1142,8 +1146,7 @@ class ClientNetwork:
                     'response', response_ct)
 
             if content_type == cls.JSON_CONTENT_TYPE and jobj is None:
-                raise errors.ClientError(
-                    'Unexpected response Content-Type: {0}'.format(response_ct))
+                raise errors.ClientError(f'Unexpected response Content-Type: {response_ct}')
 
         return response
 
@@ -1196,7 +1199,7 @@ class ClientNetwork:
             if m is None:
                 raise  # pragma: no cover
             host, path, _err_no, err_msg = m.groups()
-            raise ValueError("Requesting {0}{1}:{2}".format(host, path, err_msg))
+            raise ValueError(f"Requesting {host}{path}:{err_msg}")
 
         # If the Content-Type is DER or an Accept header was sent in the
         # request, the response may not be UTF-8 encoded. In this case, we
