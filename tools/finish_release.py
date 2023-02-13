@@ -4,7 +4,7 @@ Post-release script to publish artifacts created from Azure Pipelines.
 
 This currently includes:
 
-* Moving snaps from the candidate channel to the stable channel
+* Moving snaps from the beta channel to the stable channel
 * Publishing the Windows installer in a GitHub release
 
 Setup:
@@ -26,25 +26,31 @@ release with that name already exists.
 """
 
 import argparse
+import getpass
 import glob
 import os.path
 import re
 import subprocess
 import sys
 import tempfile
-import getpass
-from azure.devops.connection import Connection
 from zipfile import ZipFile
 
+from azure.devops.connection import Connection
 import requests
 
 # Path to the root directory of the Certbot repository containing this script
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-# This list contains the names of all Certbot DNS plugins
-DNS_PLUGINS = [os.path.basename(path) for path in glob.glob(os.path.join(REPO_ROOT, 'certbot-dns-*'))]
+# This list contains the names of all Certbot DNS plugins. We used to have a
+# CloudXNS plugin and since it's possible devs still have that directory
+# locally, we filter it out here. If it's included in this list, this script
+# will crash later when it fails to find a CloudXNS snap on the snap store with
+# the current version since we no longer build it.
+PLUGIN_SNAPS = [os.path.basename(path)
+                for path in glob.glob(os.path.join(REPO_ROOT, 'certbot-dns-*'))
+                if not path.endswith('certbot-dns-cloudxns')]
 # This list contains the name of all Certbot snaps that should be published to
 # the stable channel.
-SNAPS = ['certbot'] + DNS_PLUGINS
+ALL_SNAPS = ['certbot'] + PLUGIN_SNAPS
 # This is the count of the architectures currently supported by our snaps used
 # for sanity checking.
 SNAP_ARCH_COUNT = 3
@@ -100,13 +106,14 @@ def assert_logged_into_snapcraft():
         sys.exit(1)
 
 
-def get_snap_revisions(snap, version):
-    """Finds the revisions for the snap and version in the candidate channel.
+def get_snap_revisions(snap, channel, version):
+    """Finds the revisions for the snap and version in the given channel.
 
     If you call this function without being logged in with snapcraft, it
     will hang with no output.
 
     :param str snap: the name of the snap on the snap store
+    :param str channel: snap channel to pull revisions from
     :param str version: snap version number, e.g. 1.7.0
 
     :returns: list of revision numbers
@@ -121,20 +128,26 @@ def get_snap_revisions(snap, version):
     print('Getting revision numbers for', snap, version)
     cmd = ['snapcraft', 'status', snap]
     process = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, universal_newlines=True)
-    pattern = f'^\s+candidate\s+{version}\s+(\d+)\s*'
+    pattern = f'^\s+{channel}\s+{version}\s+(\d+)\s*'
     revisions = re.findall(pattern, process.stdout, re.MULTILINE)
-    assert len(revisions) == SNAP_ARCH_COUNT, f'Unexpected number of snaps found for {snap} {version} (expected {SNAP_ARCH_COUNT}, found {len(revisions)})'
+    assert len(revisions) == SNAP_ARCH_COUNT, f'Unexpected number of snaps found for {channel} {snap} {version} (expected {SNAP_ARCH_COUNT}, found {len(revisions)})'
     return revisions
 
 
-def promote_snaps(version):
-    """Promotes all Certbot snaps from the candidate to stable channel.
+def promote_snaps(snaps, source_channel, version, progressive_percentage=None):
+    """Promotes the given snaps from source_channel to the stable channel.
 
     If the snaps have already been released to the stable channel, this
     function will try to release them again which has no effect.
 
+    :param snaps: snap package names to be promoted
+    :type snaps: `list` of `str`
+    :param str source_channel: snap channel to promote from
     :param str version: the version number that should be found in the
         candidate channel, e.g. 1.7.0
+    :param progressive_percentage: specifies the percentage of a progressive
+        deployment
+    :type progressive_percentage: int or None
 
     :raises SystemExit: if the command snapcraft is unavailable or it
         isn't logged into an account
@@ -144,13 +157,15 @@ def promote_snaps(version):
 
     """
     assert_logged_into_snapcraft()
-    for snap in SNAPS:
-        revisions = get_snap_revisions(snap, version)
+    for snap in snaps:
+        revisions = get_snap_revisions(snap, source_channel, version)
         # The loop below is kind of slow, so let's print some output about what
         # it is doing.
         print('Releasing', snap, 'snaps to the stable channel')
         for revision in revisions:
             cmd = ['snapcraft', 'release', snap, revision, 'stable']
+            if progressive_percentage:
+                cmd.extend(f'--progressive {progressive_percentage}'.split())
             try:
                 subprocess.run(cmd, check=True, stdout=subprocess.PIPE, universal_newlines=True)
             except subprocess.CalledProcessError as e:
@@ -159,8 +174,12 @@ def promote_snaps(version):
                 print(e.stdout)
                 raise
 
-def fetch_version_number():
+def fetch_version_number(major_version=None):
     """Retrieve version number for release from Azure Pipelines
+
+    :param major_version: only consider releases for the specified major
+        version
+    :type major_version: str or None
 
     :returns: version number
     
@@ -172,9 +191,11 @@ def fetch_version_number():
     # Find the build artifacts
     build_client = connection.clients.get_build_client()
     get_builds_response = build_client.get_builds('certbot', definitions='3')
-    build_id = get_builds_response.value[0].id
-    version = build_client.get_build('certbot', build_id).source_branch.split('v')[1]
-    return version
+    for build in get_builds_response.value:
+        version = build_client.get_build('certbot', build.id).source_branch.split('v')[1]
+        if major_version is None or version.split('.')[0] == major_version:
+            return version
+    raise ValueError('Release not found on Azure Pipelines!')
 
 def main(args):
     parsed_args = parse_args(args)
@@ -186,16 +207,8 @@ def main(args):
     # again fails. Publishing the snaps can be done multiple times though
     # so we do that first to make it easier to run the script again later
     # if something goes wrong.        
-    #
-    # For now though, we're only going to publish snaps to the stable channel
-    # for 1.x.y releases and only going to update our Windows installer for
-    # 2.x.y releases. Once we feel confident enough about Certbot 2.0, we
-    # should stop doing 1.x.y releases and unconditionally publish both snaps
-    # and the Windows installer.
-    if version.startswith('1.'):
-        promote_snaps(version)
-    else:
-        publish_windows(css)
+    promote_snaps(ALL_SNAPS, 'beta', version)
+    publish_windows(css)
 
 if __name__ == "__main__":
     main(sys.argv[1:])

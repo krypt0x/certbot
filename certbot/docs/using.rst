@@ -322,6 +322,7 @@ DuckDNS_           Y    N    DNS Authentication for DuckDNS
 Porkbun_           Y    N    DNS Authentication for Porkbun
 Infomaniak_        Y    N    DNS Authentication using Infomaniak Domains API
 dns-multi_         Y    N    DNS authentication of 100+ providers using go-acme/lego
+dns-dnsmanager_    Y    N    DNS Authentication for dnsmanager.io
 ================== ==== ==== ===============================================================
 
 .. _haproxy: https://github.com/greenhost/certbot-haproxy
@@ -345,6 +346,7 @@ dns-multi_         Y    N    DNS authentication of 100+ providers using go-acme/
 .. _Porkbun: https://github.com/infinityofspace/certbot_dns_porkbun
 .. _Infomaniak: https://github.com/Infomaniak/certbot-dns-infomaniak
 .. _dns-multi: https://github.com/alexzorin/certbot-dns-multi
+.. _dns-dnsmanager: https://github.com/stayallive/certbot-dns-dnsmanager
 
 If you're interested, you can also :ref:`write your own plugin <dev-plugin>`.
 
@@ -749,6 +751,26 @@ time, Certbot will remember these options and apply them once again.
 Sometimes, you may encounter the need to change some of these options for future certificate renewals. To achieve this,
 you will need to perform the following steps:
 
+Certbot v2.3.0 and newer
+~~~~~~~~~~~~~~~~~~~~~~~~
+The ``certbot reconfigure`` command can be used to change a certificate's renewal options.
+This command will use the new renewal options to perform a test renewal against the Let's Encrypt staging server.
+If this is successful, the new renewal options will be saved and will apply to future renewals.
+
+You will need to specify the ``--cert-name``, which can be found by running ``certbot certificates``.
+
+A list of common options that may be updated with the ``reconfigure`` command can be found by running
+``certbot help reconfigure``.
+
+As a practical example, if you were using the ``webroot`` authenticator and had relocated your website to another directory,
+you can change the ``--webroot-path`` to the new directory using the following command:
+
+.. code-block:: shell
+
+  certbot reconfigure --cert-name example.com --webroot-path /path/to/new/location
+
+Certbot v2.2.0 and older
+~~~~~~~~~~~~~~~~~~~~~~~~
 1. Perform a *dry run renewal* with the amended options on the command line. This allows you to confirm that the change
    is valid and will result in successful future renewals.
 2. If the dry run is successful, perform a *live renewal* of the certificate. This will persist the change for future
@@ -876,10 +898,6 @@ For servers that drop root privileges before attempting to read the
 private key file, you will also need to use ``chgrp`` and ``chmod
 0640`` to allow the server to read
 ``/etc/letsencrypt/live/$domain/privkey.pem``.
-
-.. note:: ``/etc/letsencrypt/archive`` and ``/etc/letsencrypt/keys``
-   contain all previous keys and certificates, while
-   ``/etc/letsencrypt/live`` symlinks to the latest versions.
 
 The following files are available:
 
