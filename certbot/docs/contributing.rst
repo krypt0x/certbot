@@ -41,13 +41,11 @@ Install and configure the OS system dependencies required to run Certbot.
 
    # For APT-based distributions (e.g. Debian, Ubuntu ...)
    sudo apt update
-   sudo apt install python3-dev python3-venv gcc libaugeas0 libssl-dev \
-                    libffi-dev ca-certificates openssl
+   sudo apt install python3-venv libaugeas0
    # For RPM-based distributions (e.g. Fedora, CentOS ...)
    # NB1: old distributions will use yum instead of dnf
-   # NB2: RHEL-based distributions use python3X-devel instead of python3-devel (e.g. python36-devel)
-   sudo dnf install python3-devel gcc augeas-libs openssl-devel libffi-devel \
-                    redhat-rpm-config ca-certificates openssl
+   # NB2: RHEL-based distributions use python3X instead of python3 (e.g. python38)
+   sudo dnf install python3 augeas-libs
    # For macOS installations with Homebrew already installed and configured
    # NB: If you also run `brew install python` you don't need the ~/lib
    #     directory created below, however, Certbot's Apache plugin won't work
@@ -56,6 +54,12 @@ Install and configure the OS system dependencies required to run Certbot.
    brew install augeas
    mkdir ~/lib
    ln -s $(brew --prefix)/lib/libaugeas* ~/lib
+
+.. note:: If you have trouble creating the virtual environment below, you may
+   need to install additional dependencies. See the `cryptography project's
+   site`_ for more information.
+
+.. _`cryptography project's site`: https://cryptography.io/en/latest/installation.html#building-cryptography-on-linux
 
 Set up the Python virtual environment that will host your Certbot local instance.
 
@@ -511,8 +515,8 @@ Steps:
    virtualenv. You can do this by following the instructions in the
    :ref:`Getting Started <getting_started>` section.
 3. Run ``tox -e lint`` to check for pylint errors. Fix any errors.
-4. Run ``tox --skip-missing-interpreters`` to run the entire test suite
-   including coverage. The ``--skip-missing-interpreters`` argument ignores
+4. Run ``tox --skip-missing-interpreters`` to run all the tests we recommend
+   developers run locally. The ``--skip-missing-interpreters`` argument ignores
    missing versions of Python needed for running the tests. Fix any errors.
 5. If any documentation should be added or updated as part of the changes you
    have made, please include the documentation changes in your PR.
@@ -585,27 +589,20 @@ include our snaps, Docker images, Windows installer, CI, and our development
 environments.
 
 In most cases, the file where dependency versions are specified is
-``tools/requirements.txt``. There are two exceptions to this. The first is our
-"oldest" tests where ``tools/oldest_constraints.txt`` is used instead. The
-purpose of the "oldest" tests is to ensure Certbot continues to work with the
-oldest versions of our dependencies which we claim to support. The oldest
-versions of the dependencies we support should also be declared in our setup.py
-files to communicate this information to our users.
-
-The second exception to using ``tools/requirements.txt`` is in our unpinned
-tests. As of writing this, there is one test we run nightly in CI where we
-leave Certbot's dependencies unpinned. The thinking behind this test is to help
-us learn about breaking changes in our dependencies so that we can respond
-accordingly.
+``tools/requirements.txt``. The one exception to this is our "oldest" tests
+where ``tools/oldest_constraints.txt`` is used instead. The purpose of the
+"oldest" tests is to ensure Certbot continues to work with the oldest versions
+of our dependencies which we claim to support. The oldest versions of the
+dependencies we support should also be declared in our setup.py files to
+communicate this information to our users.
 
 The choices of whether Certbot's dependencies are pinned and what file is used
 if they are should be automatically handled for you most of the time by
 Certbot's tooling. The way it works though is ``tools/pip_install.py`` (which
 many of our other tools build on) checks for the presence of environment
-variables. If ``CERTBOT_NO_PIN`` is set to 1, Certbot's dependencies will not
-be pinned. If that variable is not set and ``CERTBOT_OLDEST`` is set to 1,
-``tools/oldest_constraints.txt`` will be used as constraints for ``pip``.
-Otherwise, ``tools/requirements.txt`` is used as constraints.
+variables. If ``CERTBOT_OLDEST`` is set to 1, ``tools/oldest_constraints.txt``
+will be used as constraints for ``pip``, otherwise, ``tools/requirements.txt``
+is used as constraints.
 
 Updating dependency versions
 ----------------------------
@@ -624,34 +621,3 @@ https://python-poetry.org/docs/dependency-specification/.
 
 If you want to learn more about the design used here, see
 ``tools/pinning/DESIGN.md`` in the Certbot repo.
-
-.. _docker-dev:
-
-Running the client with Docker
-==============================
-
-You can use Docker Compose to quickly set up an environment for running and
-testing Certbot. To install Docker Compose, follow the instructions at
-https://docs.docker.com/compose/install/.
-
-.. note:: Linux users can simply run ``pip install docker-compose`` to get
-  Docker Compose after installing Docker Engine and activating your shell as
-  described in the :ref:`Getting Started <getting_started>` section.
-
-Now you can develop on your host machine, but run Certbot and test your changes
-in Docker. When using ``docker-compose`` make sure you are inside your clone of
-the Certbot repository. As an example, you can run the following command to
-check for linting errors::
-
-  docker-compose run --rm --service-ports development bash -c 'tox -e lint'
-
-You can also leave a terminal open running a shell in the Docker container and
-modify Certbot code in another window. The Certbot repo on your host machine is
-mounted inside of the container so any changes you make immediately take
-effect. To do this, run::
-
-  docker-compose run --rm --service-ports development bash
-
-Now running the check for linting errors described above is as easy as::
-
-  tox -e lint

@@ -1,7 +1,7 @@
 name: Update Stale Issues
 on:
   schedule:
-    # Run at midnight every night
+    # Run 1:24AM every night
     - cron: '24 1 * * *'
 permissions:
   issues: write
@@ -11,14 +11,17 @@ jobs:
     steps:
       - uses: actions/stale@v6
         with:
-          # REMOVEME: dry run to see if this works
-          debug-only: true
-
           # Idle number of days before marking issues stale
           days-before-issue-stale: 365
 
+          # Never mark PRs as stale
+          days-before-pr-stale: -1
+
           # Idle number of days before closing stale issues
           days-before-issue-close: 30
+
+          # Never close PRs
+          days-before-pr-close: -1
 
           # Ignore issues with an assignee
           exempt-all-issue-assignees: true
@@ -38,5 +41,7 @@ jobs:
             should be reopened, please open a new issue with a link to this one and we'll
             take a look.
 
-          # Limit the number of actions per hour, from 1-30. Default is 30
-          operations-per-run: 30
+          # Limit the number of actions per run. As of writing this, GitHub's
+          # rate limit is 1000 requests per hour so we're still a ways off. See
+          # https://docs.github.com/en/rest/overview/resources-in-the-rest-api?apiVersion=2022-11-28#rate-limits-for-requests-from-github-actions.
+          operations-per-run: 120

@@ -1,7 +1,7 @@
 from setuptools import find_packages
 from setuptools import setup
 
-version = '2.3.0.dev0'
+version = '2.6.0.dev0'
 
 install_requires = [
     # We specify the minimum acme and certbot version as the current plugin
@@ -9,9 +9,14 @@ install_requires = [
     # https://github.com/certbot/certbot/issues/8761 for more info.
     f'acme>={version}',
     f'certbot>={version}',
-    'PyOpenSSL>=17.5.0',
+    # pyOpenSSL 23.1.0 is a bad release: https://github.com/pyca/pyopenssl/issues/1199
+    'PyOpenSSL>=17.5.0,!=23.1.0',
     'pyparsing>=2.2.1',
     'setuptools>=41.6.0',
+]
+
+test_extras = [
+    'pytest',
 ]
 
 setup(
@@ -47,6 +52,9 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=install_requires,
+    extras_require={
+        'test': test_extras,
+    },
     entry_points={
         'certbot.plugins': [
             'nginx = certbot_nginx._internal.configurator:NginxConfigurator',
