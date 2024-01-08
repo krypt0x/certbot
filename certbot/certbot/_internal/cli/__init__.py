@@ -10,6 +10,7 @@ from typing import Optional
 from typing import Type
 
 import certbot
+from certbot.configuration import NamespaceConfig
 from certbot._internal import constants
 from certbot._internal.cli.cli_constants import ARGPARSE_PARAMS_TO_REMOVE
 from certbot._internal.cli.cli_constants import cli_command
@@ -20,7 +21,6 @@ from certbot._internal.cli.cli_constants import HELP_AND_VERSION_USAGE
 from certbot._internal.cli.cli_constants import SHORT_USAGE
 from certbot._internal.cli.cli_constants import VAR_MODIFIERS
 from certbot._internal.cli.cli_constants import ZERO_ARG_ACTIONS
-from certbot._internal.cli.cli_utils import _Default
 from certbot._internal.cli.cli_utils import _DeployHookAction
 from certbot._internal.cli.cli_utils import _DomainsAction
 from certbot._internal.cli.cli_utils import _EncodeReasonAction
@@ -54,19 +54,19 @@ logger = logging.getLogger(__name__)
 helpful_parser: Optional[HelpfulArgumentParser] = None
 
 
-def prepare_and_parse_args(plugins: plugins_disco.PluginsRegistry, args: List[str],
-                           detect_defaults: bool = False) -> argparse.Namespace:
+def prepare_and_parse_args(plugins: plugins_disco.PluginsRegistry, args: List[str]
+                           ) -> NamespaceConfig:
     """Returns parsed command line arguments.
 
     :param .PluginsRegistry plugins: available plugins
     :param list args: command line arguments with the program name removed
 
     :returns: parsed command line arguments
-    :rtype: argparse.Namespace
+    :rtype: configuration.NamespaceConfig
 
     """
 
-    helpful = HelpfulArgumentParser(args, plugins, detect_defaults)
+    helpful = HelpfulArgumentParser(args, plugins)
     _add_all_groups(helpful)
 
     # --help is automatically provided by argparse
@@ -149,16 +149,13 @@ def prepare_and_parse_args(plugins: plugins_disco.PluginsRegistry, args: List[st
         [None, "testing", "renew", "certonly"],
         "--dry-run", action="store_true", dest="dry_run",
         default=flag_default("dry_run"),
-        help="Perform a test run of the client, obtaining test (invalid) certificates"
-             " but not saving them to disk. This can currently only be used"
-             " with the 'certonly' and 'renew' subcommands. \nNote: Although --dry-run"
-             " tries to avoid making any persistent changes on a system, it "
-             " is not completely side-effect free: if used with webserver authenticator plugins"
-             " like apache and nginx, it makes and then reverts temporary config changes"
-             " in order to obtain test certificates, and reloads webservers to deploy and then"
-             " roll back those changes.  It also calls --pre-hook and --post-hook commands"
-             " if they are defined because they may be necessary to accurately simulate"
-             " renewal. --deploy-hook commands are not called.")
+        help="Perform a test run against the Let's Encrypt staging server, obtaining test"
+             " (invalid) certificates but not saving them to disk. This can only be used with the"
+             " 'certonly' and 'renew' subcommands. It may trigger webserver reloads to "
+             " temporarily modify & roll back configuration files."
+             " --pre-hook and --post-hook commands run by default."
+             " --deploy-hook commands do not run, unless enabled by --run-deploy-hooks."
+             " The test server may be overridden with --server.")
     helpful.add(
         ["testing", "renew", "certonly", "reconfigure"],
         "--run-deploy-hooks", action="store_true", dest="run_deploy_hooks",
@@ -270,8 +267,8 @@ def prepare_and_parse_args(plugins: plugins_disco.PluginsRegistry, args: List[st
     # overwrites server, handled in HelpfulArgumentParser.parse_args()
     helpful.add(["testing", "revoke", "run"], "--test-cert", "--staging",
         dest="staging", action="store_true", default=flag_default("staging"),
-        help="Use the staging server to obtain or revoke test (invalid) certificates; equivalent"
-             " to --server " + constants.STAGING_URI)
+        help="Use the Let's Encrypt staging server to obtain or revoke test (invalid) "
+             "certificates; equivalent to --server " + constants.STAGING_URI)
     helpful.add(
         "testing", "--debug", action="store_true", default=flag_default("debug"),
         help="Show tracebacks in case of errors")
@@ -474,95 +471,16 @@ def prepare_and_parse_args(plugins: plugins_disco.PluginsRegistry, args: List[st
     # parser (--help should display plugin-specific options last)
     _plugins_parsing(helpful, plugins)
 
-    if not detect_defaults:
-        global helpful_parser # pylint: disable=global-statement
-        helpful_parser = helpful
+    global helpful_parser # pylint: disable=global-statement
+    helpful_parser = helpful
     return helpful.parse_args()
-
-
-def set_by_cli(var: str) -> bool:
-    """
-    Return True if a particular config variable has been set by the user
-    (CLI or config file) including if the user explicitly set it to the
-    default.  Returns False if the variable was assigned a default value.
-    """
-    # We should probably never actually hit this code. But if we do,
-    # a deprecated option has logically never been set by the CLI.
-    if var in DEPRECATED_OPTIONS:
-        return False
-
-    detector = set_by_cli.detector  # type: ignore
-    if detector is None and helpful_parser is not None:
-        # Setup on first run: `detector` is a weird version of config in which
-        # the default value of every attribute is wrangled to be boolean-false
-        plugins = plugins_disco.PluginsRegistry.find_all()
-        # reconstructed_args == sys.argv[1:], or whatever was passed to main()
-        reconstructed_args = helpful_parser.args + [helpful_parser.verb]
-
-        detector = set_by_cli.detector = prepare_and_parse_args(  # type: ignore
-            plugins, reconstructed_args, detect_defaults=True)
-        # propagate plugin requests: eg --standalone modifies config.authenticator
-        detector.authenticator, detector.installer = (
-            plugin_selection.cli_plugin_requests(detector))
-
-    if not isinstance(getattr(detector, var), _Default):
-        logger.debug("Var %s=%s (set by user).", var, getattr(detector, var))
-        return True
-
-    for modifier in VAR_MODIFIERS.get(var, []):
-        if set_by_cli(modifier):
-            logger.debug("Var %s=%s (set by user).",
-                var, VAR_MODIFIERS.get(var, []))
-            return True
-
-    return False
-
-
-# static housekeeping var
-# functions attributed are not supported by mypy
-# https://github.com/python/mypy/issues/2087
-set_by_cli.detector = None  # type: ignore
-
-
-def has_default_value(option: str, value: Any) -> bool:
-    """Does option have the default value?
-
-    If the default value of option is not known, False is returned.
-
-    :param str option: configuration variable being considered
-    :param value: value of the configuration variable named option
-
-    :returns: True if option has the default value, otherwise, False
-    :rtype: bool
-
-    """
-    if helpful_parser is not None:
-        return (option in helpful_parser.defaults and
-                helpful_parser.defaults[option] == value)
-    return False
-
-
-def option_was_set(option: str, value: Any) -> bool:
-    """Was option set by the user or does it differ from the default?
-
-    :param str option: configuration variable being considered
-    :param value: value of the configuration variable named option
-
-    :returns: True if the option was set, otherwise, False
-    :rtype: bool
-
-    """
-    # If an option is deprecated, it was effectively not set by the user.
-    if option in DEPRECATED_OPTIONS:
-        return False
-    return set_by_cli(option) or not has_default_value(option, value)
 
 
 def argparse_type(variable: Any) -> Type:
     """Return our argparse type function for a config variable (default: str)"""
     # pylint: disable=protected-access
     if helpful_parser is not None:
-        for action in helpful_parser.parser._actions:
+        for action in helpful_parser.actions:
             if action.type is not None and action.dest == variable:
                 return action.type
     return str

@@ -328,8 +328,8 @@ Writing your own plugin
     for one example of that.
 
 Certbot client supports dynamic discovery of plugins through the
-`setuptools entry points`_ using the `certbot.plugins` group. This
-way you can, for example, create a custom implementation of
+`importlib.metadata entry points`_ using the `certbot.plugins` group.
+This way you can, for example, create a custom implementation of
 `~certbot.interfaces.Authenticator` or the
 `~certbot.interfaces.Installer` without having to merge it
 with the core upstream source code. An example is provided in
@@ -352,8 +352,8 @@ users install it system-wide with `pip install`. Note that this will
 only work for users who have Certbot installed from OS packages or via
 pip.
 
-.. _`setuptools entry points`:
-    https://setuptools.readthedocs.io/en/latest/pkg_resources.html#entry-points
+.. _`importlib.metadata entry points`:
+    https://importlib-metadata.readthedocs.io/en/latest/using.html#entry-points
 
 Writing your own plugin snap
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -621,3 +621,29 @@ https://python-poetry.org/docs/dependency-specification/.
 
 If you want to learn more about the design used here, see
 ``tools/pinning/DESIGN.md`` in the Certbot repo.
+
+Choosing dependency versions
+----------------------------
+
+A number of Unix distributions create third-party Certbot packages for their users.
+Where feasible, the Certbot project tries to manage its dependencies in a way that
+does not create avoidable work for packagers.
+
+Avoiding adding new dependencies is a good way to help with this.
+
+When adding new or upgrading existing Python dependencies, Certbot developers should
+pay attention to which distributions are actively packaging Certbot. In particular:
+
+- EPEL (used by RHEL/CentOS/Fedora) updates Certbot regularly. At the time of writing,
+  EPEL9 is the release of EPEL where Certbot is being updated, but check the `EPEL
+  home page <https://docs.fedoraproject.org/en-US/epel/>`_ and `pkgs.org
+  <https://pkgs.org/search/?q=python3-certbot>`_ for the latest release.
+- Debian and Ubuntu only package Certbot when making new releases of their distros.
+  Checking the available version of dependencies in Debian "sid" and "unstable" can help
+  to identify dependencies that are likely to be available in the next stable release of
+  these distros.
+
+If a dependency is already packaged in these distros and is acceptable for use in Certbot,
+the oldest packaged version of that dependency should be chosen and set as the minimum
+version in ``setup.py``.
+

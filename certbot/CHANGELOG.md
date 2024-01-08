@@ -2,14 +2,120 @@
 
 Certbot adheres to [Semantic Versioning](https://semver.org/).
 
-## 2.6.0 - master
+## 2.9.0 - master
+
+### Added
+
+* Support for Python 3.12 was added.
+
+### Changed
+
+*
+
+### Fixed
+
+* Updates `joinpath` syntax to only use one addition per call, because the multiple inputs
+  version was causing mypy errors on Python 3.10.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.8.0 - 2023-12-05
+
+### Added
+
+* Added support for [Alpine Linux](https://www.alpinelinux.org) distribution when is used the apache plugin
+
+### Changed
+
+* Support for Python 3.7 was removed.
+
+### Fixed
+
+* Stop using the deprecated `pkg_resources` API included in `setuptools`.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.7.4 - 2023-11-01
+
+### Fixed
+
+* Fixed a bug introduced in version 2.7.0 that caused interactively entered
+  webroot plugin values to not be saved for renewal.
+* Fixed a bug introduced in version 2.7.0 of our Lexicon based DNS plugins that
+  caused them to fail to find the DNS zone that needs to be modified in some
+  cases.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.7.3 - 2023-10-24
+
+### Fixed
+
+* Fixed a bug where arguments with contained spaces weren't being handled correctly
+* Fixed a bug that caused the ACME account to not be properly restored on
+  renewal causing problems in setups where the user had multiple accounts with
+  the same ACME server.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.7.2 - 2023-10-19
+
+### Fixed
+
+* `certbot-dns-ovh` plugin now requires `lexicon>=3.15.1` to ensure a consistent behavior with OVH APIs.
+* Fixed a bug where argument sources weren't correctly detected in abbreviated
+  arguments, short arguments, and some other circumstances
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.7.1 - 2023-10-10
+
+### Fixed
+
+* Fixed a bug that broke the DNS plugin for DNSimple that was introduced in
+  version 2.7.0 of the plugin.
+* Correctly specified the new minimum version of the ConfigArgParse package
+  that Certbot requires which is 1.5.3.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.7.0 - 2023-10-03
+
+### Added
+
+* Add `certbot.util.LooseVersion` class. See [GH #9489](https://github.com/certbot/certbot/issues/9489).
+* Add a new base class `certbot.plugins.dns_common_lexicon.LexiconDNSAuthenticator` to implement a DNS
+  authenticator plugin backed by Lexicon to communicate with the provider DNS API. This approach relies
+  heavily on conventions to reduce the implementation complexity of a new plugin.
+* Add a new test base class `certbot.plugins.dns_test_common_lexicon.BaseLexiconDNSAuthenticatorTest` to
+  help testing DNS plugins implemented on top of `LexiconDNSAuthenticator`.
+
+### Changed
+
+* `NamespaceConfig` now tracks how its arguments were set via a dictionary, allowing us to remove a bunch
+  of global state previously needed to inspect whether a user set an argument or not.
+* Support for Python 3.7 was deprecated and will be removed in our next planned release.
+* Added `RENEWED_DOMAINS` and `FAILED_DOMAINS` environment variables for consumption by post renewal hooks.
+* Deprecates `LexiconClient` base class and `build_lexicon_config` function in
+  `certbot.plugins.dns_common_lexicon` module in favor of `LexiconDNSAuthenticator`.
+* Deprecates `BaseLexiconAuthenticatorTest` and `BaseLexiconClientTest` test base classes of
+  `certbot.plugins.dns_test_common_lexicon` module in favor of `BaseLexiconDNSAuthenticatorTest`.
+
+### Fixed
+
+* Do not call deprecated datetime.utcnow() and datetime.utcfromtimestamp()
+* Filter zones in `certbot-dns-google` to avoid usage of private DNS zones to create records
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.6.0 - 2023-05-09
 
 ### Added
 
 * `--dns-google-project` optionally allows for specifying the project that the DNS zone(s) reside in,
   which allows for Certbot usage in scenarios where the auth credentials reside in a different
   project to the zone(s) that are being managed.
-*
+* There is now a new `Other` annotated challenge object to allow plugins to support entirely novel challenges.
 
 ### Changed
 

@@ -324,6 +324,7 @@ Infomaniak_        Y    N    DNS Authentication using Infomaniak Domains API
 dns-multi_         Y    N    DNS authentication of 100+ providers using go-acme/lego
 dns-dnsmanager_    Y    N    DNS Authentication for dnsmanager.io
 standalone-nfq_    Y    N    HTTP Authentication that works with any webserver (Linux only)
+dns-solidserver_   Y    N    DNS Authentication using SOLIDserver (EfficientIP)
 ================== ==== ==== ===============================================================
 
 .. _haproxy: https://github.com/greenhost/certbot-haproxy
@@ -349,6 +350,7 @@ standalone-nfq_    Y    N    HTTP Authentication that works with any webserver (
 .. _dns-multi: https://github.com/alexzorin/certbot-dns-multi
 .. _dns-dnsmanager: https://github.com/stayallive/certbot-dns-dnsmanager
 .. _standalone-nfq: https://github.com/alexzorin/certbot-standalone-nfq
+.. _dns-solidserver: https://gitlab.com/charlyhong/certbot-dns-solidserver
 
 If you're interested, you can also :ref:`write your own plugin <dev-plugin>`.
 
@@ -704,6 +706,12 @@ renew each and every installed certificate regardless of its age. (This
 form is not appropriate to run daily because each certificate will be
 renewed every day, which will quickly run into the certificate authority
 rate limit.)
+
+Starting with Certbot 2.7.0, certbot provides the environment variables
+`RENEWED_DOMAINS` and `FAILED_DOMAINS` to all post renewal hooks. These
+variables contain a space separated list of domains. These variables can be used
+to determine if a renewal has succeeded or failed as part of your post renewal
+hook.
 
 Note that options provided to ``certbot renew`` will apply to
 *every* certificate for which renewal is attempted; for example,
@@ -1091,19 +1099,19 @@ ACME directory. For example, if you would like to use Let's Encrypt's
 staging server, you would add ``--server
 https://acme-staging-v02.api.letsencrypt.org/directory`` to the command line.
 
+.. note:: ``--dry-run`` uses the Let's Encrypt staging server, unless ``--server``
+   is specified on the CLI or in the :ref:`cli.ini configuration file <config-file>`.
+   Take caution when using ``--dry-run`` with a custom server, as it may cause real
+   certificates to be issued and discarded.
+
 If Certbot does not trust the SSL certificate used by the ACME server, you
 can use the `REQUESTS_CA_BUNDLE
 <https://requests.readthedocs.io/en/latest/user/advanced/#ssl-cert-verification>`_
 environment variable to override the root certificates trusted by Certbot. Certbot
 uses the ``requests`` library, which does not use the operating system trusted root store.
+Make sure that ``REQUESTS_CA_BUNDLE`` is set globally in the environment and not only on
+the CLI, or scheduled renewal will not succeed.
 
-If you use ``--server`` to specify an ACME CA that implements the standardized
-version of the spec, you may be able to obtain a certificate for a
-wildcard domain. Some CAs (such as Let's Encrypt) require that domain
-validation for wildcard domains must be done through modifications to
-DNS records which means that the dns-01_ challenge type must be used. To
-see a list of Certbot plugins that support this challenge type and how
-to use them, see plugins_.
 
 Lock Files
 ==========

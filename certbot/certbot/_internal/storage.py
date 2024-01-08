@@ -22,7 +22,6 @@ from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 import parsedatetime
-import pkg_resources
 import pytz
 
 import certbot
@@ -32,19 +31,19 @@ from certbot import errors
 from certbot import interfaces
 from certbot import ocsp
 from certbot import util
-from certbot._internal import cli
 from certbot._internal import constants
 from certbot._internal import error_handler
 from certbot._internal.plugins import disco as plugins_disco
 from certbot.compat import filesystem
 from certbot.compat import os
 from certbot.plugins import common as plugins_common
+from certbot.util import parse_loose_version
 
 logger = logging.getLogger(__name__)
 
 ALL_FOUR = ("cert", "privkey", "chain", "fullchain")
 README = "README"
-CURRENT_VERSION = pkg_resources.parse_version(certbot.__version__)
+CURRENT_VERSION = parse_loose_version(certbot.__version__)
 BASE_PRIVKEY_MODE = 0o600
 
 # pylint: disable=too-many-lines
@@ -217,7 +216,7 @@ def update_configuration(lineagename: str, archive_dir: str, target: Mapping[str
         os.unlink(temp_filename)
 
     # Save only the config items that are relevant to renewal
-    values = relevant_values(vars(cli_config.namespace))
+    values = relevant_values(cli_config)
     write_renewal_config(config_filename, temp_filename, archive_dir, target, values)
     filesystem.replace(temp_filename, config_filename)
 
@@ -283,22 +282,23 @@ def _relevant(namespaces: Iterable[str], option: str) -> bool:
             any(option.startswith(namespace) for namespace in namespaces))
 
 
-def relevant_values(all_values: Mapping[str, Any]) -> Dict[str, Any]:
+def relevant_values(config: configuration.NamespaceConfig) -> Dict[str, Any]:
     """Return a new dict containing only items relevant for renewal.
 
-    :param dict all_values: The original values.
+    :param .NamespaceConfig config: parsed command line
 
     :returns: A new dictionary containing items that can be used in renewal.
     :rtype dict:
 
     """
+    all_values = config.to_dict()
     plugins = plugins_disco.PluginsRegistry.find_all()
     namespaces = [plugins_common.dest_namespace(plugin) for plugin in plugins]
 
     rv = {
         option: value
         for option, value in all_values.items()
-        if _relevant(namespaces, option) and cli.option_was_set(option, value)
+        if _relevant(namespaces, option) and config.set_by_user(option)
     }
     # We always save the server value to help with forward compatibility
     # and behavioral consistency when versions of Certbot with different
@@ -492,7 +492,7 @@ class RenewableCert(interfaces.RenewableCert):
 
         conf_version = self.configuration.get("version")
         if (conf_version is not None and
-                pkg_resources.parse_version(conf_version) > CURRENT_VERSION):
+                parse_loose_version(conf_version) > CURRENT_VERSION):
             logger.info(
                 "Attempting to parse the version %s renewal configuration "
                 "file found at %s with version %s of Certbot. This might not "
@@ -1023,7 +1023,7 @@ class RenewableCert(interfaces.RenewableCert):
             interval = self.configuration.get("renew_before_expiry", default_interval)
             expiry = crypto_util.notAfter(self.version(
                 "cert", self.latest_common_version()))
-            now = pytz.UTC.fromutc(datetime.datetime.utcnow())
+            now = datetime.datetime.now(pytz.UTC)
             if expiry < add_time_interval(now, interval):
                 logger.debug("Should renew, less than %s before certificate "
                              "expiry %s.", interval,
@@ -1121,7 +1121,7 @@ class RenewableCert(interfaces.RenewableCert):
         config_file.close()
 
         # Save only the config items that are relevant to renewal
-        values = relevant_values(vars(cli_config.namespace))
+        values = relevant_values(cli_config)
 
         new_config = write_renewal_config(config_filename, config_filename, archive,
             target, values)
